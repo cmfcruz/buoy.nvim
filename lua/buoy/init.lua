@@ -6,22 +6,22 @@
 local M = {}
 
 M.config = {
-  agent = "auto",           -- "auto" | "claude" | "codex"; auto prefers an installed CLI (Claude Code first)
-  cmd = nil,                -- override the agent's default binary (optional)
+  agent = "auto", -- "auto" | "claude" | "codex"; auto prefers an installed CLI (Claude Code first)
+  cmd = nil, -- override the agent's default binary (optional)
   window = {
-    style = "float",        -- "float" | "vsplit"
-    width = 0.40,           -- fraction of editor width
+    style = "float", -- "float" | "vsplit"
+    width = 0.40, -- fraction of editor width
     border = "rounded",
   },
   keymaps = {
-    toggle = "<F2>",        -- set to false to disable
+    toggle = "<F2>", -- set to false to disable
   },
 }
 
 -- Built-in agent presets. `cmd` is the CLI launched in the popup; `title`
 -- is the float border label. Both are overridable via setup() opts.
 local AGENTS = {
-  codex  = { cmd = "codex",  title = " Codex " },
+  codex = { cmd = "codex", title = " Codex " },
   claude = { cmd = "claude", title = " Claude Code " },
 }
 
@@ -76,8 +76,11 @@ function M.setup(opts)
   M.config.agent = resolve_agent(M.config.agent)
   local preset = AGENTS[M.config.agent]
   if not preset then
-    error(("buoy: unknown agent %q (expected 'auto', 'codex', or 'claude')")
-      :format(tostring(M.config.agent)))
+    error(
+      ("buoy: unknown agent %q (expected 'auto', 'codex', or 'claude')"):format(
+        tostring(M.config.agent)
+      )
+    )
   end
   -- Resolve launch command and popup title; an explicit override wins.
   M.config.cmd = M.config.cmd or preset.cmd

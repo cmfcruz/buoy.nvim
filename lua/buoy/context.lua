@@ -6,10 +6,10 @@
 local M = {}
 
 M.state = {
-  file = nil,        -- absolute path of last real file buffer
+  file = nil, -- absolute path of last real file buffer
   filetype = nil,
-  cursor = nil,      -- { line = 1-based, col = 1-based }
-  selection = nil,   -- { file, start_line, end_line, mode, text }
+  cursor = nil, -- { line = 1-based, col = 1-based }
+  selection = nil, -- { file, start_line, end_line, mode, text }
 }
 
 local function is_real_buffer(buf)
@@ -46,10 +46,7 @@ local function capture_selection()
   if vim.fn.has("nvim-0.10") == 1 then
     text = table.concat(vim.fn.getregion(s, e, { type = vmode }), "\n")
   else
-    text = table.concat(
-      vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false),
-      "\n"
-    )
+    text = table.concat(vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false), "\n")
   end
 
   M.state.selection = {
@@ -71,7 +68,7 @@ function M.setup()
 
   vim.api.nvim_create_autocmd("ModeChanged", {
     group = group,
-    pattern = "[vV\x16]*:*", -- leaving visual / V-line / V-block
+    pattern = "[vV\22]*:*", -- leaving visual / V-line / V-block (\22 = Ctrl-V)
     callback = capture_selection,
   })
 end

@@ -1,0 +1,12 @@
+# Selene standard-library definition for the Neovim runtime.
+# Referenced from selene.toml as `std = "lua51+vim"`.
+#
+# `any: true` tells selene that `vim` and every field beneath it (vim.api,
+# vim.fn, vim.keymap, vim.v, ...) is a valid global callable with any
+# arguments. This intentionally trades deep signature checking for zero false
+# positives on the large, evolving Neovim API surface — selene still catches
+# genuinely undefined globals, unused variables, and logic mistakes.
+---
+globals:
+  vim:
+    any: true
