@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.1](https://github.com/cmfcruz/buoy.nvim/compare/v1.0.0...v1.0.1) (2026-06-26)
+
+
+### Bug Fixes
+
+* unify MCP server name to "buoy" and clarify two-part install ([#4](https://github.com/cmfcruz/buoy.nvim/issues/4)) ([1ff1020](https://github.com/cmfcruz/buoy.nvim/commit/1ff1020882be6a2af28d4892109c709c0c66ec02))
+
 ## [1.0.0](https://github.com/cmfcruz/buoy.nvim/compare/buoy.nvim-v0.1.0...buoy.nvim-v1.0.0) (2026-06-26)
 
 
