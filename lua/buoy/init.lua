@@ -90,7 +90,7 @@ function M.setup(opts)
   require("buoy.context").setup()
 
   if M.config.keymaps.toggle then
-    vim.keymap.set({ "n", "t" }, M.config.keymaps.toggle, function()
+    vim.keymap.set({ "n", "x", "t" }, M.config.keymaps.toggle, function()
       require("buoy.terminal").toggle()
     end, { desc = "buoy: toggle", silent = true })
   end
