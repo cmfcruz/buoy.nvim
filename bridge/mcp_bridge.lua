@@ -66,7 +66,7 @@ local function handle(msg)
     respond(id, {
       protocolVersion = (msg.params and msg.params.protocolVersion) or "2025-03-26",
       capabilities = { tools = vim.empty_dict() },
-      serverInfo = { name = "nvim-context", version = "0.1.0" }, -- x-release-please-version
+      serverInfo = { name = "nvim-context", version = "1.0.0" }, -- x-release-please-version
     })
   elseif method == "notifications/initialized" then
     -- notification: no response
