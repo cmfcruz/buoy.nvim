@@ -5,6 +5,10 @@
 ![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-57A143?logo=neovim&logoColor=white)
 ![MCP](https://img.shields.io/badge/MCP-stdio-5D6DFF)
 
+<p align="center">
+  <img src="buoy.png" alt="buoy.nvim" width="200">
+</p>
+
 > Floats on the surface, anchored to the code.
 
 A floating window for your AI coding agent — Codex or Claude Code's
