@@ -138,12 +138,21 @@ Add the following to the instructions file your agent reads — `AGENTS.md`
 ```markdown
 ## Neovim context
 
-You may be running inside the user's Neovim. The `buoy` MCP server
-exposes the user's live editor state. When the user says "this file",
-"this code", "the selection", "here", or refers to code they have not
-pasted, call `get_current_selection`, `get_current_file`, or
-`get_cursor_position` before answering. Use `get_diagnostics` when asked
-about errors or warnings.
+You may be running inside the user's Neovim through `buoy`. If the
+`buoy` MCP server is available, use it to inspect editor state instead
+of asking the user to paste code.
+
+When the user refers to "this", "here", "the selection", "this file",
+"the current buffer", open files, diagnostics, errors, or warnings:
+
+- Use `get_current_selection` for selected/highlighted code.
+- Use `get_current_file` for the current file path, filetype, and cwd.
+- Use `get_cursor_position` for the cursor location and nearby lines.
+- Use `get_open_buffers` when the user refers to another open file or buffer.
+- Use `get_diagnostics` when the user asks about errors, warnings, LSP, or failing code.
+
+If a tool returns no useful data, say that briefly and ask the user to
+select code, move the cursor, open the relevant file, or paste the text.
 ```
 
 ## Usage
