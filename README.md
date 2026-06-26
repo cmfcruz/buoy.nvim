@@ -165,3 +165,27 @@ still make discovery work; for multiple simultaneous Neovim instances in
   official TUI already renders diffs and approvals, which is the point.
 - Two Neovim instances in the *same* cwd will race on the lockfile;
   `$NVIM` passthrough resolves this when available.
+
+## Development
+
+Contributions go through pull requests; `main` is protected by CI.
+
+- **Formatting** — [StyLua](https://github.com/JohnnyMorganz/StyLua).
+  Run `stylua .` (or `stylua --check .` to verify).
+- **Linting** — [Selene](https://github.com/Kampfkarren/selene). Run
+  `selene .`. The Neovim runtime is described in `vim.yml`.
+- **Pre-commit** — `pip install pre-commit && pre-commit install` wires
+  StyLua and a few hygiene hooks into your commits (StyLua's binary is
+  fetched automatically; install Selene separately if you want it locally).
+
+CI (`.github/workflows/ci.yml`) enforces both checks on every PR.
+
+### Releases
+
+Versioning is automated with
+[Release Please](https://github.com/googleapis/release-please) using
+[Conventional Commits](https://www.conventionalcommits.org/). Merging
+`feat:` / `fix:` commits to `main` opens a release PR that bumps
+`version.txt`, updates the changelog, and — once merged — tags the
+release. Use `feat:`/`fix:` in commit subjects (and `feat!:` or a
+`BREAKING CHANGE:` footer for breaking changes).

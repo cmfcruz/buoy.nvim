@@ -21,10 +21,7 @@ local function open_window()
   if cfg.style == "vsplit" then
     vim.cmd("botright vsplit")
     state.win = vim.api.nvim_get_current_win()
-    vim.api.nvim_win_set_width(
-      state.win,
-      math.floor(vim.o.columns * cfg.width)
-    )
+    vim.api.nvim_win_set_width(state.win, math.floor(vim.o.columns * cfg.width))
     vim.api.nvim_win_set_buf(state.win, state.buf)
   else
     local width = math.floor(vim.o.columns * cfg.width)

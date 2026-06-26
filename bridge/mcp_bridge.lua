@@ -66,7 +66,7 @@ local function handle(msg)
     respond(id, {
       protocolVersion = (msg.params and msg.params.protocolVersion) or "2025-03-26",
       capabilities = { tools = vim.empty_dict() },
-      serverInfo = { name = "nvim-context", version = "0.1.0" },
+      serverInfo = { name = "nvim-context", version = "0.1.0" }, -- x-release-please-version
     })
   elseif method == "notifications/initialized" then
     -- notification: no response
@@ -76,8 +76,7 @@ local function handle(msg)
     if not chan then
       return respond(id, { tools = {} })
     end
-    local ok, tools = pcall(call_nvim,
-      "return require('buoy.tools').list()", {})
+    local ok, tools = pcall(call_nvim, "return require('buoy.tools').list()", {})
     respond(id, { tools = ok and tools or {} })
   elseif method == "tools/call" then
     if not chan then
@@ -88,8 +87,8 @@ local function handle(msg)
     end
     local name = msg.params and msg.params.name
     local args = (msg.params and msg.params.arguments) or vim.empty_dict()
-    local ok, result = pcall(call_nvim,
-      "return require('buoy.tools').dispatch(...)", { name, args })
+    local ok, result =
+      pcall(call_nvim, "return require('buoy.tools').dispatch(...)", { name, args })
     if ok then
       respond(id, {
         content = { { type = "text", text = vim.json.encode(result) } },

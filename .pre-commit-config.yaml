@@ -1,0 +1,19 @@
+# Run `pre-commit install` once after cloning to enable these hooks.
+# StyLua downloads a prebuilt binary (no Rust/Lua toolchain required).
+# Selene linting is enforced in CI (see .github/workflows/ci.yml); install it
+# locally with `cargo install selene` if you want it on every commit.
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+
+  - repo: https://github.com/JohnnyMorganz/StyLua
+    rev: v2.5.2
+    hooks:
+      - id: stylua-github

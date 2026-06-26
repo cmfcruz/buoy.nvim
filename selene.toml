@@ -1,0 +1,11 @@
+std = "lua51+vim"
+
+# Neovim plugins frequently shadow locals deliberately (e.g. `local ok, err`);
+# keep selene focused on real correctness issues rather than style nits that
+# StyLua already owns.
+[lints]
+mixed_table = "allow"
+# JSON-RPC/MCP notification branches (e.g. notifications/initialized) are
+# deliberately empty: a notification gets no response. Keep them explicit
+# rather than folding them into the unknown-method path.
+empty_if = "allow"

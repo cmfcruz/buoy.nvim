@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: Format (StyLua)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check formatting (StyLua)
+        uses: JohnnyMorganz/stylua-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: "2.5.2"
+          args: --check .
+
+  lint:
+    name: Lint (Selene)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      SELENE_VERSION: "0.31.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Selene
+        run: |
+          curl -fsSL -o selene.zip \
+            "https://github.com/Kampfkarren/selene/releases/download/${SELENE_VERSION}/selene-light-${SELENE_VERSION}-linux.zip"
+          unzip -o selene.zip
+          chmod +x selene
+          echo "$PWD" >> "$GITHUB_PATH"
+
+      - name: Lint (Selene)
+        run: selene .
