@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.0.2](https://github.com/cmfcruz/buoy.nvim/compare/v1.0.1...v1.0.2) (2026-06-26)
+
+
+### Bug Fixes
+
+* support visual mode for toggle keymap and commands ([#7](https://github.com/cmfcruz/buoy.nvim/issues/7)) ([ac70858](https://github.com/cmfcruz/buoy.nvim/commit/ac708588af0da2bbf1d11bb884210ffd9a9893e8))
+
 ## [1.0.1](https://github.com/cmfcruz/buoy.nvim/compare/v1.0.0...v1.0.1) (2026-06-26)
 
 
