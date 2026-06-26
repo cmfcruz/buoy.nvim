@@ -6,7 +6,7 @@
 local M = {}
 
 M.config = {
-  agent = "codex",          -- "codex" | "claude" — picks the CLI + popup title
+  agent = "auto",           -- "auto" | "claude" | "codex"; auto prefers an installed CLI (Claude Code first)
   cmd = nil,                -- override the agent's default binary (optional)
   window = {
     style = "float",        -- "float" | "vsplit"
@@ -24,6 +24,23 @@ local AGENTS = {
   codex  = { cmd = "codex",  title = " Codex " },
   claude = { cmd = "claude", title = " Claude Code " },
 }
+
+--- Resolve the `"auto"` agent to a concrete one: prefer Claude Code, then
+--- Codex, by what's actually on `$PATH`. Falls back to Claude Code so the
+--- popup still launches (and shows a clear "command not found") if neither
+--- CLI is installed yet. An explicit `agent = "codex"|"claude"` skips this.
+local function resolve_agent(agent)
+  if agent ~= "auto" then
+    return agent
+  end
+  if vim.fn.executable("claude") == 1 then
+    return "claude"
+  end
+  if vim.fn.executable("codex") == 1 then
+    return "codex"
+  end
+  return "claude"
+end
 
 --- Ensure this Neovim instance has an RPC socket and record it in a
 --- well-known lockfile so the MCP bridge can find us even if the agent
@@ -52,10 +69,14 @@ end
 
 function M.setup(opts)
   M.config = vim.tbl_deep_extend("force", M.config, opts or {})
+  -- Records that configuration has happened so the load-time auto-setup in
+  -- plugin/buoy.lua knows to stand down (an explicit setup() always wins).
+  M._did_setup = true
 
+  M.config.agent = resolve_agent(M.config.agent)
   local preset = AGENTS[M.config.agent]
   if not preset then
-    error(("buoy: unknown agent %q (expected 'codex' or 'claude')")
+    error(("buoy: unknown agent %q (expected 'auto', 'codex', or 'claude')")
       :format(tostring(M.config.agent)))
   end
   -- Resolve launch command and popup title; an explicit override wins.

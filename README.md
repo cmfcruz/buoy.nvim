@@ -31,66 +31,91 @@ whatever you remember to paste.
 - Neovim 0.9+ (0.10+ recommended for exact charwise selections)
 - The Codex and/or Claude Code CLI on your `$PATH`
 
-## Install (lazy.nvim)
+## Install
 
-```lua
-{
-  "cmfcruz/buoy.nvim",
-  opts = {
-    agent = "codex",        -- "codex" | "claude" (Claude Code)
-    -- cmd = "codex",       -- optional: override the agent's default binary
-    window = { style = "float", width = 0.4, border = "rounded" },
-    keymaps = { toggle = "<F2>" },
-  },
-}
+buoy.nvim runs inside Neovim, so installing it means cloning it where Neovim
+looks. Neovim loads anything in its built-in `pack/*/start/` folder
+automatically at startup, and buoy configures itself with sensible defaults on
+first load — so installing it is **one command, then launch**.
+
+**Linux/macOS:**
+
+```sh
+git clone https://github.com/cmfcruz/buoy.nvim \
+  ~/.local/share/nvim/site/pack/buoy/start/buoy.nvim
 ```
 
-The `agent` option is the single switch between Codex and Claude Code. It
-selects which CLI the window launches and the window title; set `cmd` only if
-your binary isn't on `$PATH` under the default name. The MCP context bridge
-below is identical for both agents — only the registration step differs.
+**Windows (PowerShell):**
+
+```powershell
+git clone https://github.com/cmfcruz/buoy.nvim `
+  "$env:LOCALAPPDATA\nvim-data\site\pack\buoy\start\buoy.nvim"
+```
+
+That's it. Start Neovim, open any file, and **press `<F2>`** — Claude Code's
+TUI floats over the editor. (buoy auto-detects which agent CLI is on your
+`$PATH`, preferring Claude Code; no config file required.)
+
+To update buoy later, pull the clone:
+
+```sh
+git -C ~/.local/share/nvim/site/pack/buoy/start/buoy.nvim pull
+```
+
+To also let the agent read your live editor state (selection, open file,
+diagnostics), continue to [Register the MCP server](#register-the-mcp-server).
+
+## Configuration
+
+buoy works with zero configuration: it auto-detects your agent CLI (Claude
+Code first, then Codex) and maps `<F2>`. Call `setup()` only to override a
+default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
+`~/AppData/Local/nvim/init.lua` on Windows):
+
+```lua
+require("buoy").setup({
+  agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex"
+  keymaps = { toggle = "<leader>a" },  -- change the toggle key; set to false to disable
+  -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
+  window = { style = "float", width = 0.4, border = "rounded" },
+})
+```
+
+- **Switch to Codex:** set `agent = "codex"`. (With the default `"auto"`,
+  buoy uses Codex anyway if it's the only CLI on your `$PATH`.)
+- **Change the hotkey:** set `keymaps.toggle` to any key, or `false` to map
+  nothing and drive it with `:Buoy` / `:BuoyFocus`.
+- Every key is optional; anything you omit keeps its default.
 
 ## Register the MCP server
 
-The bridge is a standard stdio MCP server, so both agents can use it. Use
-the **absolute** path to wherever your plugin manager installed this repo.
+The bridge is a standard stdio MCP server. Register it with your agent's own
+CLI — no need to find or hand-edit a config file, and the shell fills in the
+absolute path for you (the agents spawn MCP servers without a shell, so the
+path *must* be absolute — `~/...` in a config file would not expand).
 
-### Codex
+Run **one** of these, matching the agent you use. `$HOME` is the only thing
+the shell substitutes:
 
-Add to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.nvim_context]
-command = "nvim"
-args = ["-l", "/home/you/.local/share/nvim/lazy/buoy.nvim/bridge/mcp_bridge.lua"]
-```
-
-Verify inside the Codex TUI with `/mcp` — you should see `nvim_context`
-with five tools.
-
-### Claude Code
-
-Register via the CLI (writes to your Claude Code config):
+**Claude Code:**
 
 ```sh
-claude mcp add nvim_context -- \
-  nvim -l /home/you/.local/share/nvim/lazy/buoy.nvim/bridge/mcp_bridge.lua
+claude mcp add -s user nvim_context -- \
+  nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
 ```
 
-…or add it to a project-local `.mcp.json`:
+(`-s user` registers it for all your projects; drop it to scope to the
+current project only. Codex's `mcp add` is global by default.)
 
-```json
-{
-  "mcpServers": {
-    "nvim_context": {
-      "command": "nvim",
-      "args": ["-l", "/home/you/.local/share/nvim/lazy/buoy.nvim/bridge/mcp_bridge.lua"]
-    }
-  }
-}
+**Codex:**
+
+```sh
+codex mcp add nvim_context -- \
+  nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
 ```
 
-Verify inside Claude Code with `/mcp` — you should see `nvim_context`.
+Verify with `/mcp` inside the TUI — you should see `nvim_context` with five
+tools.
 
 ## Teach the agent to use the context
 
@@ -123,7 +148,7 @@ running Neovim in this order:
 
 1. `$NVIM` — set automatically for processes spawned from inside Neovim,
    if the agent forwards its environment to MCP servers
-2. `$NVIM_CONTEXT_SOCKET` — exported by the plugin when it launches the
+2. `$NVIM_CONTEXT_SOCKET` — exported by buoy when it launches the
    agent (`$CODEX_NVIM_SOCKET` is also set as a legacy alias)
 3. A cwd-keyed lockfile under `stdpath("cache")/buoy/`
 4. A `latest` lockfile (most recently started instance)

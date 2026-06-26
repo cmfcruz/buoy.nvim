@@ -10,3 +10,14 @@ end, { desc = "Toggle the buoy agent window" })
 vim.api.nvim_create_user_command("BuoyFocus", function()
   require("buoy.terminal").open()
 end, { desc = "Open/focus the buoy agent window" })
+
+-- Zero-config path: if the user never calls require("buoy").setup(), apply
+-- defaults automatically so a bare `git clone` into pack/ just works (socket
+-- published, MCP context live, <F2> mapped, agent auto-detected). Deferred so
+-- an explicit setup() in the user's config runs first and wins.
+vim.schedule(function()
+  local buoy = require("buoy")
+  if not buoy._did_setup then
+    buoy.setup()
+  end
+end)
