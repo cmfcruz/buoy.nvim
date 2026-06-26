@@ -1,5 +1,10 @@
 # buoy.nvim
 
+[![Release](https://img.shields.io/github/v/release/cmfcruz/buoy.nvim?label=release)](https://github.com/cmfcruz/buoy.nvim/releases)
+[![License](https://img.shields.io/github/license/cmfcruz/buoy.nvim)](LICENSE)
+![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-57A143?logo=neovim&logoColor=white)
+![MCP](https://img.shields.io/badge/MCP-stdio-5D6DFF)
+
 > Floats on the surface, anchored to the code.
 
 A floating window for your AI coding agent — Codex or Claude Code's
