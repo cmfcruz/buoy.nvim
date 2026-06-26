@@ -36,7 +36,10 @@ whatever you remember to paste.
 buoy.nvim runs inside Neovim, so installing it means cloning it where Neovim
 looks. Neovim loads anything in its built-in `pack/*/start/` folder
 automatically at startup, and buoy configures itself with sensible defaults on
-first load — so installing it is **one command, then launch**.
+first load. Setup comes in two parts: **clone-and-launch** (below) gets you the
+floating agent TUI, and a one-time
+[MCP registration](#register-the-mcp-server) is what lets the agent pull your
+live editor state. The clone is the only step needed to try the window.
 
 **Linux/macOS:**
 
@@ -52,7 +55,7 @@ git clone https://github.com/cmfcruz/buoy.nvim `
   "$env:LOCALAPPDATA\nvim-data\site\pack\buoy\start\buoy.nvim"
 ```
 
-That's it. Start Neovim, open any file, and **press `<F2>`** — Claude Code's
+Start Neovim, open any file, and **press `<F2>`** — Claude Code's
 TUI floats over the editor. (buoy auto-detects which agent CLI is on your
 `$PATH`, preferring Claude Code; no config file required.)
 
@@ -100,7 +103,7 @@ the shell substitutes:
 **Claude Code:**
 
 ```sh
-claude mcp add -s user nvim_context -- \
+claude mcp add -s user buoy -- \
   nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
 ```
 
@@ -110,11 +113,11 @@ current project only. Codex's `mcp add` is global by default.)
 **Codex:**
 
 ```sh
-codex mcp add nvim_context -- \
+codex mcp add buoy -- \
   nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
 ```
 
-Verify with `/mcp` inside the TUI — you should see `nvim_context` with five
+Verify with `/mcp` inside the TUI — you should see `buoy` with five
 tools.
 
 ## Teach the agent to use the context
@@ -126,7 +129,7 @@ Add the following to the instructions file your agent reads — `AGENTS.md`
 ```markdown
 ## Neovim context
 
-You may be running inside the user's Neovim. The `nvim_context` MCP server
+You may be running inside the user's Neovim. The `buoy` MCP server
 exposes the user's live editor state. When the user says "this file",
 "this code", "the selection", "here", or refers to code they have not
 pasted, call `get_current_selection`, `get_current_file`, or
