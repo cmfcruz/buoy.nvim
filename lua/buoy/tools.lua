@@ -128,6 +128,33 @@ M.tools = {
       return { file = target, diagnostics = out }
     end,
   },
+  {
+    name = "set_cursor_position",
+    description = "Move the user's cursor to a position in a file and bring it into view, "
+      .. "opening the file if it isn't already on screen (in any file — not just open buffers). "
+      .. "Use this when the user asks to be taken/moved/jumped to a place ('take me to the "
+      .. "parse_config definition', 'jump to the next failing test', 'go to where user_id is "
+      .. "assigned'), or after you've located something and the user accepts your offer to "
+      .. "navigate there. When the user only asks *where* something is, answer in text and "
+      .. "offer to jump rather than moving unprompted. Resolve the symbol/match to a concrete "
+      .. "line yourself (from buffer contents, diagnostics, or search) before calling. The "
+      .. "user's previous location stays on the jumplist, so the jump is cheap and reversible.",
+    inputSchema = {
+      type = "object",
+      properties = {
+        file = {
+          type = "string",
+          description = "Absolute path; defaults to the file the user is editing",
+        },
+        line = { type = "integer", description = "1-based line to move the cursor to" },
+        col = { type = "integer", description = "1-based column; defaults to 1" },
+      },
+      required = { "line" },
+    },
+    handler = function(args)
+      return require("buoy.navigate").set_cursor_position(args or {})
+    end,
+  },
 }
 
 --- Schema list for MCP tools/list (handlers stripped).

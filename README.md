@@ -126,7 +126,7 @@ codex mcp add buoy -- \
   nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
 ```
 
-Verify with `/mcp` inside the TUI — you should see `buoy` with five
+Verify with `/mcp` inside the TUI — you should see `buoy` with six
 tools.
 
 ## Teach the agent to use the context
@@ -152,6 +152,10 @@ When the user refers to "this", "here", "the selection", "this file",
   function, imports, or nearby code — reflecting unsaved edits.
 - Use `get_open_buffers` when the user refers to another open file or buffer.
 - Use `get_diagnostics` when the user asks about errors, warnings, LSP, or failing code.
+- Use `set_cursor_position` to move the user's cursor to a place ("take me to the
+  `parse_config` definition", "jump to the next failing test"). Resolve the
+  target to a concrete line yourself first. When the user only asks *where*
+  something is, answer in text and offer to jump rather than moving unprompted.
 
 If a tool returns no useful data, say that briefly and ask the user to
 select code, move the cursor, open the relevant file, or paste the text.
