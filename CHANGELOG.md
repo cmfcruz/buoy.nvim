@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.0.2...v1.1.0) (2026-06-27)
+
+
+### Features
+
+* add get_buffer_range tool ([#11](https://github.com/cmfcruz/buoy.nvim/issues/11)) ([b3f0b9e](https://github.com/cmfcruz/buoy.nvim/commit/b3f0b9eb45c2a812bec5b95ce0ad693a976ce8b3))
+
 ## [1.0.2](https://github.com/cmfcruz/buoy.nvim/compare/v1.0.1...v1.0.2) (2026-06-26)
 
 
