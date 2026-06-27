@@ -148,6 +148,8 @@ When the user refers to "this", "here", "the selection", "this file",
 - Use `get_current_selection` for selected/highlighted code.
 - Use `get_current_file` for the current file path, filetype, and cwd.
 - Use `get_cursor_position` for the cursor location and nearby lines.
+- Use `get_buffer_range` to widen the view around the cursor — the enclosing
+  function, imports, or nearby code — reflecting unsaved edits.
 - Use `get_open_buffers` when the user refers to another open file or buffer.
 - Use `get_diagnostics` when the user asks about errors, warnings, LSP, or failing code.
 

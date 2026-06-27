@@ -43,6 +43,35 @@ M.tools = {
     end,
   },
   {
+    name = "get_buffer_range",
+    description = "Lines from a file open in Neovim, by line range, reflecting unsaved "
+      .. "edits (unlike reading from disk). Defaults to the file the user is editing. "
+      .. "Call this after get_cursor_position to widen the view around the cursor — to "
+      .. "pull in the enclosing function, imports, or nearby code.",
+    inputSchema = {
+      type = "object",
+      properties = {
+        file = { type = "string", description = "Absolute path; defaults to current file" },
+        start_line = { type = "integer", description = "1-based, inclusive" },
+        end_line = { type = "integer", description = "1-based, inclusive" },
+      },
+      required = { "start_line", "end_line" },
+    },
+    handler = function(args)
+      local target = (args and args.file) or ctx().file
+      if not target then
+        return { error = "No file in context." }
+      end
+      local buf = vim.fn.bufnr(target)
+      if buf == -1 then
+        return { error = "File is not open in Neovim: " .. target }
+      end
+      local first = math.max(args.start_line, 1)
+      local lines = vim.api.nvim_buf_get_lines(buf, first - 1, args.end_line, false)
+      return { file = target, first_line = first, lines = lines }
+    end,
+  },
+  {
     name = "get_current_selection",
     description = "The user's most recent visual selection in Neovim: file, line range, "
       .. "and the selected text. Call this when the user says 'this code', "
