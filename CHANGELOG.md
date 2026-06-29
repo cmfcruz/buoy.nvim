@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.1.0...v1.2.0) (2026-06-29)
+
+
+### Features
+
+* add set_cursor_position tool ([#13](https://github.com/cmfcruz/buoy.nvim/issues/13)) ([c5e8464](https://github.com/cmfcruz/buoy.nvim/commit/c5e846481ae455db991a647c85534564f5296a0c))
+
 ## [1.1.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.0.2...v1.1.0) (2026-06-27)
 
 

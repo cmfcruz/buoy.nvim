@@ -66,7 +66,7 @@ local function handle(msg)
     respond(id, {
       protocolVersion = (msg.params and msg.params.protocolVersion) or "2025-03-26",
       capabilities = { tools = vim.empty_dict() },
-      serverInfo = { name = "buoy", version = "1.1.0" }, -- x-release-please-version
+      serverInfo = { name = "buoy", version = "1.2.0" }, -- x-release-please-version
     })
   elseif method == "notifications/initialized" then
     -- notification: no response
