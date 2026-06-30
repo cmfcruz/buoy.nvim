@@ -39,15 +39,19 @@ local function clear_selection_highlight()
   highlighted_buf = nil
 end
 
--- Paint the cached selection so it stays visible while the user is in the agent
--- popup. Called when the agent is opened (F2), NOT on every visual exit — a plain
--- Esc should leave no highlight behind. The MCP server exposes the range
--- line-by-line (start_line/end_line), so we highlight whole lines to match
--- exactly what the agent receives rather than the finer column span Neovim drew.
--- Build the cached selection from two getpos()-style positions and a visual
--- mode char ("v"/"V"/Ctrl-V). Orders the positions, extracts the exact text with
+local function line_byte_len(buf, row)
+  return #(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or "")
+end
+
+-- Build the cached selection from two getpos()-style positions and a visual mode
+-- char ("v"/"V"/Ctrl-V). Orders the positions, extracts the exact text with
 -- getregion() (nvim 0.10+, whole lines otherwise), and records the buffer
 -- separately from M.state.selection so the MCP-served payload stays buffer-free.
+--
+-- start_col/end_col are 1-based, inclusive byte columns so the agent can locate
+-- a sub-line selection precisely. Linewise (V) selections span whole lines, and
+-- their '>' column is the v:maxcol sentinel, so we normalize those to col 1
+-- through the end line's length rather than leak the sentinel.
 local function set_selection(buf, p1, p2, vmode)
   local s, e = p1, p2
   if s[2] > e[2] or (s[2] == e[2] and s[3] > e[3]) then
@@ -61,10 +65,21 @@ local function set_selection(buf, p1, p2, vmode)
     text = table.concat(vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false), "\n")
   end
 
+  local start_col, end_col
+  if vmode == "V" then
+    start_col = 1
+    end_col = math.max(line_byte_len(buf, e[2]), 1)
+  else
+    start_col = s[3]
+    end_col = math.min(e[3], math.max(line_byte_len(buf, e[2]), 1))
+  end
+
   M.state.selection = {
     file = vim.api.nvim_buf_get_name(buf),
     start_line = s[2],
     end_line = e[2],
+    start_col = start_col,
+    end_col = end_col,
     mode = vmode,
     text = text,
   }
@@ -114,7 +129,9 @@ function M.paint_selection()
     -- inclusive end; the inclusive 1-based end maps straight to the exclusive
     -- 0-based extmark end_col (+off for selections reaching past EOL). Clamp to
     -- the line so set_extmark can't error on an out-of-range column.
-    for _, seg in ipairs(vim.fn.getregionpos(selection_pos[1], selection_pos[2], { type = sel.mode })) do
+    for _, seg in
+      ipairs(vim.fn.getregionpos(selection_pos[1], selection_pos[2], { type = sel.mode }))
+    do
       local p1, p2 = seg[1], seg[2]
       local row = p2[2]
       local len = #(vim.api.nvim_buf_get_lines(selection_buf, row - 1, row, false)[1] or "")
