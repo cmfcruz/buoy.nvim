@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.1](https://github.com/cmfcruz/buoy.nvim/compare/v1.2.0...v1.2.1) (2026-06-30)
+
+
+### Bug Fixes
+
+* clear cached visual selection when the buffer changed mid-select ([#15](https://github.com/cmfcruz/buoy.nvim/issues/15)) ([965f034](https://github.com/cmfcruz/buoy.nvim/commit/965f03488bc24401b7487bd1aa34ad09d2b690f1))
+
 ## [1.2.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.1.0...v1.2.0) (2026-06-29)
 
 
