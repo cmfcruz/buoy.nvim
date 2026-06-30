@@ -28,10 +28,10 @@ local function update_position()
 end
 
 -- Record the buffer's changedtick when visual mode is entered, stored
--- buffer-locally so concurrent selections in split windows don't clobber each
--- other. capture_selection() compares against it to tell a plain exit (Esc/y)
--- from a destructive one (x/d/c/s/r): if the buffer changed while selecting,
--- the selection was consumed by an operator and no longer exists.
+-- buffer-locally so selections in different buffers don't clobber each other.
+-- capture_selection() compares against it to tell a non-mutating exit (Esc/y)
+-- from a mutating visual operation: if the buffer changed while selecting, the
+-- marks are no longer trustworthy.
 local function mark_visual_enter()
   local buf = vim.api.nvim_get_current_buf()
   if is_real_buffer(buf) then
@@ -43,19 +43,18 @@ end
 --- set at that point). Uses getregion() (nvim 0.10+) for correct
 --- charwise/blockwise extraction, falling back to whole lines on older nvim.
 ---
---- ModeChanged also fires for destructive exits (`x`, `d`, `c`, ...), which
---- delete the selection *before* this runs. We detect those by the buffer's
---- changedtick advancing since visual mode was entered, and clear the cache
---- instead of reading marks that point at text which no longer exists. That
---- guard is version-independent, so neither extraction path below is ever
---- reached with a stale selection.
+--- ModeChanged also fires after mutating visual operations. We detect those by
+--- the buffer's changedtick advancing since visual mode was entered, and clear
+--- the cache instead of reading marks that may point at stale text or invalid
+--- positions. That guard is version-independent, so neither extraction path
+--- below is ever reached with an untrusted selection.
 local function capture_selection()
   local buf = vim.api.nvim_get_current_buf()
   if not is_real_buffer(buf) then
     return
   end
 
-  -- Destructive exit: the selection is gone, so drop it rather than capture.
+  -- Mutating exit: the selection marks are untrusted, so drop the cache.
   local entered_tick = vim.b[buf].buoy_visual_tick
   if entered_tick == nil or vim.api.nvim_buf_get_changedtick(buf) ~= entered_tick then
     M.state.selection = nil
