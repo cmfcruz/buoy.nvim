@@ -12,8 +12,121 @@ M.state = {
   selection = nil, -- { file, start_line, end_line, mode, text }
 }
 
+-- Namespace for the persistent selection highlight (see paint_selection).
+local ns = vim.api.nvim_create_namespace("BuoyContextSelection")
+-- Buffer that currently holds the painted highlight, so we can clear it.
+local highlighted_buf = nil
+-- Buffer of the cached selection, kept out of M.state.selection (which the MCP
+-- server serves verbatim) so the agent isn't handed an internal buffer number.
+local selection_buf = nil
+-- Ordered getpos()-style start/end positions of the cached selection, kept for
+-- repainting the exact charwise/blockwise region (M.state.selection only carries
+-- the normalized line/column numbers the MCP exposes).
+local selection_pos = nil
+
 local function is_real_buffer(buf)
   return vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= ""
+end
+
+--- Leaving visual mode (or switching to the agent window) ends visual mode and
+--- drops Neovim's live Visual highlight. To keep the selection visible while the
+--- user is in the floating AI client, we repaint the captured range ourselves as
+--- whole-line extmarks. Cleared on a new selection or when the cache is dropped.
+local function clear_selection_highlight()
+  if highlighted_buf and vim.api.nvim_buf_is_valid(highlighted_buf) then
+    vim.api.nvim_buf_clear_namespace(highlighted_buf, ns, 0, -1)
+  end
+  highlighted_buf = nil
+end
+
+-- Paint the cached selection so it stays visible while the user is in the agent
+-- popup. Called when the agent is opened (F2), NOT on every visual exit — a plain
+-- Esc should leave no highlight behind. The MCP server exposes the range
+-- line-by-line (start_line/end_line), so we highlight whole lines to match
+-- exactly what the agent receives rather than the finer column span Neovim drew.
+-- Build the cached selection from two getpos()-style positions and a visual
+-- mode char ("v"/"V"/Ctrl-V). Orders the positions, extracts the exact text with
+-- getregion() (nvim 0.10+, whole lines otherwise), and records the buffer
+-- separately from M.state.selection so the MCP-served payload stays buffer-free.
+local function set_selection(buf, p1, p2, vmode)
+  local s, e = p1, p2
+  if s[2] > e[2] or (s[2] == e[2] and s[3] > e[3]) then
+    s, e = e, s
+  end
+
+  local text
+  if vim.fn.has("nvim-0.10") == 1 then
+    text = table.concat(vim.fn.getregion(s, e, { type = vmode }), "\n")
+  else
+    text = table.concat(vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false), "\n")
+  end
+
+  M.state.selection = {
+    file = vim.api.nvim_buf_get_name(buf),
+    start_line = s[2],
+    end_line = e[2],
+    mode = vmode,
+    text = text,
+  }
+  selection_buf = buf
+  selection_pos = { s, e }
+end
+
+local function in_visual_mode()
+  local m = vim.fn.mode()
+  return m == "v" or m == "V" or m == "\22"
+end
+
+-- Paint the cached selection so it stays visible while focus is in the agent
+-- popup. Called when the agent opens (F2), NOT on every visual exit, so a plain
+-- Esc leaves no highlight behind.
+--
+-- When F2 is pressed from visual mode the '< / '> marks aren't set yet and the
+-- ModeChanged capture hasn't run, so we read the live selection straight from
+-- the visual anchor ('v') and cursor ('.') and refresh the cache here. From
+-- normal mode (selection made earlier, then Esc) we just use the cache.
+function M.paint_selection()
+  if in_visual_mode() then
+    local buf = vim.api.nvim_get_current_buf()
+    if is_real_buffer(buf) then
+      set_selection(buf, vim.fn.getpos("v"), vim.fn.getpos("."), vim.fn.mode())
+    end
+  end
+
+  clear_selection_highlight()
+  local sel = M.state.selection
+  if not sel or not (selection_buf and vim.api.nvim_buf_is_valid(selection_buf)) then
+    return
+  end
+
+  if sel.mode == "V" or not selection_pos or vim.fn.has("nvim-0.10") == 0 then
+    -- Linewise (or no getregionpos): whole lines, including past the last
+    -- character (hl_eol), matching what linewise visual mode shows.
+    for row = sel.start_line, sel.end_line do
+      vim.api.nvim_buf_set_extmark(selection_buf, ns, row - 1, 0, {
+        line_hl_group = "Visual",
+        hl_eol = true,
+      })
+    end
+  else
+    -- Charwise / blockwise: highlight the exact columns. getregionpos() returns
+    -- one {start_pos, end_pos} segment per line, with 1-based byte columns and an
+    -- inclusive end; the inclusive 1-based end maps straight to the exclusive
+    -- 0-based extmark end_col (+off for selections reaching past EOL). Clamp to
+    -- the line so set_extmark can't error on an out-of-range column.
+    for _, seg in ipairs(vim.fn.getregionpos(selection_pos[1], selection_pos[2], { type = sel.mode })) do
+      local p1, p2 = seg[1], seg[2]
+      local row = p2[2]
+      local len = #(vim.api.nvim_buf_get_lines(selection_buf, row - 1, row, false)[1] or "")
+      vim.api.nvim_buf_set_extmark(selection_buf, ns, p1[2] - 1, p1[3] - 1, {
+        end_row = row - 1,
+        end_col = math.min(p2[3] + p2[4], len),
+        hl_group = "Visual",
+      })
+    end
+  end
+
+  highlighted_buf = selection_buf
 end
 
 local function update_position()
@@ -35,6 +148,8 @@ end
 local function mark_visual_enter()
   local buf = vim.api.nvim_get_current_buf()
   if is_real_buffer(buf) then
+    -- A new selection is starting; drop the previous one's painted highlight.
+    clear_selection_highlight()
     vim.b[buf].buoy_visual_tick = vim.api.nvim_buf_get_changedtick(buf)
   end
 end
@@ -58,6 +173,8 @@ local function capture_selection()
   local entered_tick = vim.b[buf].buoy_visual_tick
   if entered_tick == nil or vim.api.nvim_buf_get_changedtick(buf) ~= entered_tick then
     M.state.selection = nil
+    selection_buf = nil
+    clear_selection_highlight()
     return
   end
 
@@ -66,23 +183,7 @@ local function capture_selection()
     return
   end
 
-  local vmode = vim.fn.visualmode()
-  local text
-  if vim.fn.has("nvim-0.10") == 1 then
-    text = table.concat(vim.fn.getregion(s, e, { type = vmode }), "\n")
-  else
-    -- No getregion(); whole-line extraction. The changedtick guard above
-    -- guarantees the selection still exists, so the marks are in bounds.
-    text = table.concat(vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false), "\n")
-  end
-
-  M.state.selection = {
-    file = vim.api.nvim_buf_get_name(buf),
-    start_line = s[2],
-    end_line = e[2],
-    mode = vmode,
-    text = text,
-  }
+  set_selection(buf, s, e, vim.fn.visualmode())
 end
 
 function M.setup()
