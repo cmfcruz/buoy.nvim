@@ -73,8 +73,10 @@ M.tools = {
   },
   {
     name = "get_current_selection",
-    description = "The user's most recent visual selection in Neovim: file, line range, "
-      .. "and the selected text. Call this when the user says 'this code', "
+    description = "The user's most recent visual selection in Neovim: file, line range "
+      .. "(start_line/end_line) and column range (start_col/end_col, 1-based inclusive "
+      .. "byte columns; whole lines for linewise selections), the visual mode, and the "
+      .. "exact selected text. Call this when the user says 'this code', "
       .. "'the selected/highlighted part', or refers to something without pasting it.",
     inputSchema = { type = "object", properties = vim.empty_dict() },
     handler = function()
