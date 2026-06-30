@@ -27,12 +27,37 @@ local function update_position()
   M.state.cursor = { line = pos[1], col = pos[2] + 1 }
 end
 
+-- Record the buffer's changedtick when visual mode is entered, stored
+-- buffer-locally so selections in different buffers don't clobber each other.
+-- capture_selection() compares against it to tell a non-mutating exit (Esc/y)
+-- from a mutating visual operation: if the buffer changed while selecting, the
+-- marks are no longer trustworthy.
+local function mark_visual_enter()
+  local buf = vim.api.nvim_get_current_buf()
+  if is_real_buffer(buf) then
+    vim.b[buf].buoy_visual_tick = vim.api.nvim_buf_get_changedtick(buf)
+  end
+end
+
 --- Capture the selection when leaving visual mode ('< and '> marks are
---- set at that point). Uses getregion() when available (nvim 0.10+) for
---- correct charwise/blockwise extraction; falls back to whole lines.
+--- set at that point). Uses getregion() (nvim 0.10+) for correct
+--- charwise/blockwise extraction, falling back to whole lines on older nvim.
+---
+--- ModeChanged also fires after mutating visual operations. We detect those by
+--- the buffer's changedtick advancing since visual mode was entered, and clear
+--- the cache instead of reading marks that may point at stale text or invalid
+--- positions. That guard is version-independent, so neither extraction path
+--- below is ever reached with an untrusted selection.
 local function capture_selection()
   local buf = vim.api.nvim_get_current_buf()
   if not is_real_buffer(buf) then
+    return
+  end
+
+  -- Mutating exit: the selection marks are untrusted, so drop the cache.
+  local entered_tick = vim.b[buf].buoy_visual_tick
+  if entered_tick == nil or vim.api.nvim_buf_get_changedtick(buf) ~= entered_tick then
+    M.state.selection = nil
     return
   end
 
@@ -46,6 +71,8 @@ local function capture_selection()
   if vim.fn.has("nvim-0.10") == 1 then
     text = table.concat(vim.fn.getregion(s, e, { type = vmode }), "\n")
   else
+    -- No getregion(); whole-line extraction. The changedtick guard above
+    -- guarantees the selection still exists, so the marks are in bounds.
     text = table.concat(vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false), "\n")
   end
 
@@ -64,6 +91,12 @@ function M.setup()
   vim.api.nvim_create_autocmd({ "CursorMoved", "CursorMovedI", "BufEnter" }, {
     group = group,
     callback = update_position,
+  })
+
+  vim.api.nvim_create_autocmd("ModeChanged", {
+    group = group,
+    pattern = "*:[vV\22]*", -- entering visual / V-line / V-block (\22 = Ctrl-V)
+    callback = mark_visual_enter,
   })
 
   vim.api.nvim_create_autocmd("ModeChanged", {
