@@ -67,6 +67,11 @@ local function start_job()
 end
 
 function M.open()
+  -- Paint the cached selection so it stays visible while focus is in the popup.
+  -- Done here (on open) rather than on visual-mode exit, so a plain Esc leaves no
+  -- highlight behind -- only triggering the agent retains it.
+  require("buoy.context").paint_selection()
+
   if win_valid() then
     vim.api.nvim_set_current_win(state.win)
     vim.cmd.startinsert()
