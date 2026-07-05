@@ -1,4 +1,4 @@
---- Tracks editor context (file, cursor, last visual selection) from
+--- Tracks editor context (file, cursor, active handoff selection) from
 --- *real* buffers. This cache is what the MCP tools serve, because when
 --- the user is typing in the agent popup, the "current" window is the
 --- terminal — the interesting context is wherever they were editing.
@@ -23,6 +23,9 @@ local selection_buf = nil
 -- repainting the exact charwise/blockwise region (M.state.selection only carries
 -- the normalized line/column numbers the MCP exposes).
 local selection_pos = nil
+-- Pressing the agent toggle from visual mode is an explicit selection handoff.
+-- The following visual-mode exit should not clear the just-captured selection.
+local preserve_next_visual_exit = false
 
 local function is_real_buffer(buf)
   return vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= ""
@@ -39,11 +42,21 @@ local function clear_selection_highlight()
   highlighted_buf = nil
 end
 
+local function clear_selection()
+  M.state.selection = nil
+  selection_buf = nil
+  selection_pos = nil
+  preserve_next_visual_exit = false
+  clear_selection_highlight()
+end
+
+M.clear_selection = clear_selection
+
 local function line_byte_len(buf, row)
   return #(vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1] or "")
 end
 
--- Build the cached selection from two getpos()-style positions and a visual mode
+-- Build the handoff selection from two getpos()-style positions and a visual mode
 -- char ("v"/"V"/Ctrl-V). Orders the positions, extracts the exact text with
 -- getregion() (nvim 0.10+, whole lines otherwise), and records the buffer
 -- separately from M.state.selection so the MCP-served payload stays buffer-free.
@@ -92,25 +105,29 @@ local function in_visual_mode()
   return m == "v" or m == "V" or m == "\22"
 end
 
--- Paint the cached selection so it stays visible while focus is in the agent
--- popup. Called when the agent opens (F2), NOT on every visual exit, so a plain
--- Esc leaves no highlight behind.
+-- Paint the handoff selection so it stays visible while focus is in the agent
+-- popup. Called when the agent opens (F2), not on every visual exit, so Esc and
+-- yanks dismiss the selection instead of leaving stale agent context behind.
 --
 -- When F2 is pressed from visual mode the '< / '> marks aren't set yet and the
--- ModeChanged capture hasn't run, so we read the live selection straight from
--- the visual anchor ('v') and cursor ('.') and refresh the cache here. From
--- normal mode (selection made earlier, then Esc) we just use the cache.
+-- ModeChanged exit may not have run, so we read the live selection straight
+-- from the visual anchor ('v') and cursor ('.') and refresh the cache here.
 function M.paint_selection()
   if in_visual_mode() then
     local buf = vim.api.nvim_get_current_buf()
     if is_real_buffer(buf) then
       set_selection(buf, vim.fn.getpos("v"), vim.fn.getpos("."), vim.fn.mode())
+      preserve_next_visual_exit = true
     end
   end
 
   clear_selection_highlight()
   local sel = M.state.selection
-  if not sel or not (selection_buf and vim.api.nvim_buf_is_valid(selection_buf)) then
+  if not sel then
+    return
+  end
+  if not (selection_buf and vim.api.nvim_buf_is_valid(selection_buf)) then
+    clear_selection()
     return
   end
 
@@ -157,50 +174,29 @@ local function update_position()
   M.state.cursor = { line = pos[1], col = pos[2] + 1 }
 end
 
--- Record the buffer's changedtick when visual mode is entered, stored
--- buffer-locally so selections in different buffers don't clobber each other.
--- capture_selection() compares against it to tell a non-mutating exit (Esc/y)
--- from a mutating visual operation: if the buffer changed while selecting, the
--- marks are no longer trustworthy.
+-- A new visual selection supersedes any previous handoff selection.
 local function mark_visual_enter()
   local buf = vim.api.nvim_get_current_buf()
   if is_real_buffer(buf) then
-    -- A new selection is starting; drop the previous one's painted highlight.
-    clear_selection_highlight()
-    vim.b[buf].buoy_visual_tick = vim.api.nvim_buf_get_changedtick(buf)
+    clear_selection()
   end
 end
 
---- Capture the selection when leaving visual mode ('< and '> marks are
---- set at that point). Uses getregion() (nvim 0.10+) for correct
---- charwise/blockwise extraction, falling back to whole lines on older nvim.
----
---- ModeChanged also fires after mutating visual operations. We detect those by
---- the buffer's changedtick advancing since visual mode was entered, and clear
---- the cache instead of reading marks that may point at stale text or invalid
---- positions. That guard is version-independent, so neither extraction path
---- below is ever reached with an untrusted selection.
-local function capture_selection()
+--- Leaving visual mode by Esc, yank, or an edit means the user has dismissed the
+--- selection. Keep it only for the explicit visual-mode F2 handoff path, where
+--- paint_selection() captured the live range before focus moved to the agent.
+local function clear_dismissed_selection()
+  if preserve_next_visual_exit then
+    preserve_next_visual_exit = false
+    return
+  end
+
   local buf = vim.api.nvim_get_current_buf()
   if not is_real_buffer(buf) then
     return
   end
 
-  -- Mutating exit: the selection marks are untrusted, so drop the cache.
-  local entered_tick = vim.b[buf].buoy_visual_tick
-  if entered_tick == nil or vim.api.nvim_buf_get_changedtick(buf) ~= entered_tick then
-    M.state.selection = nil
-    selection_buf = nil
-    clear_selection_highlight()
-    return
-  end
-
-  local s, e = vim.fn.getpos("'<"), vim.fn.getpos("'>")
-  if s[2] == 0 or e[2] == 0 then
-    return
-  end
-
-  set_selection(buf, s, e, vim.fn.visualmode())
+  clear_selection()
 end
 
 function M.setup()
@@ -220,7 +216,7 @@ function M.setup()
   vim.api.nvim_create_autocmd("ModeChanged", {
     group = group,
     pattern = "[vV\22]*:*", -- leaving visual / V-line / V-block (\22 = Ctrl-V)
-    callback = capture_selection,
+    callback = clear_dismissed_selection,
   })
 end
 

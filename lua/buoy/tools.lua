@@ -73,14 +73,14 @@ M.tools = {
   },
   {
     name = "get_current_selection",
-    description = "The user's most recent visual selection in Neovim: file, line range "
+    description = "The user's active visual-mode handoff selection in Neovim: file, line range "
       .. "(start_line/end_line) and column range (start_col/end_col, 1-based inclusive "
       .. "byte columns; whole lines for linewise selections), the visual mode, and the "
       .. "exact selected text. Call this when the user says 'this code', "
       .. "'the selected/highlighted part', or refers to something without pasting it.",
     inputSchema = { type = "object", properties = vim.empty_dict() },
     handler = function()
-      return ctx().selection or { error = "No visual selection has been made yet." }
+      return ctx().selection or { error = "No active visual selection handoff." }
     end,
   },
   {
