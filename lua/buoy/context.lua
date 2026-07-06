@@ -9,7 +9,7 @@ M.state = {
   file = nil, -- absolute path of last real file buffer
   filetype = nil,
   cursor = nil, -- { line = 1-based, col = 1-based }
-  selection = nil, -- { file, start_line, end_line, mode, text }
+  selection = nil, -- { file, start_line, end_line, start_col, end_col, mode, text }
 }
 
 -- Namespace for the persistent selection highlight (see paint_selection).
@@ -23,7 +23,7 @@ local selection_buf = nil
 -- repainting the exact charwise/blockwise region (M.state.selection only carries
 -- the normalized line/column numbers the MCP exposes).
 local selection_pos = nil
--- Pressing the agent toggle from visual mode is an explicit selection handoff.
+-- Opening the agent from visual mode is an explicit selection handoff.
 -- The following visual-mode exit should not clear the just-captured selection.
 local preserve_next_visual_exit = false
 
@@ -31,10 +31,7 @@ local function is_real_buffer(buf)
   return vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= ""
 end
 
---- Leaving visual mode (or switching to the agent window) ends visual mode and
---- drops Neovim's live Visual highlight. To keep the selection visible while the
---- user is in the floating AI client, we repaint the captured range ourselves as
---- whole-line extmarks. Cleared on a new selection or when the cache is dropped.
+--- Clear any extmarks from the previously painted handoff selection.
 local function clear_selection_highlight()
   if highlighted_buf and vim.api.nvim_buf_is_valid(highlighted_buf) then
     vim.api.nvim_buf_clear_namespace(highlighted_buf, ns, 0, -1)
@@ -63,8 +60,8 @@ end
 --
 -- start_col/end_col are 1-based, inclusive byte columns so the agent can locate
 -- a sub-line selection precisely. Linewise (V) selections span whole lines, and
--- their '>' column is the v:maxcol sentinel, so we normalize those to col 1
--- through the end line's length rather than leak the sentinel.
+-- their marks can use the v:maxcol sentinel, so we normalize those to col 1
+-- through the end line's length.
 local function set_selection(buf, p1, p2, vmode)
   local s, e = p1, p2
   if s[2] > e[2] or (s[2] == e[2] and s[3] > e[3]) then
@@ -106,11 +103,11 @@ local function in_visual_mode()
 end
 
 -- Paint the handoff selection so it stays visible while focus is in the agent
--- popup. Called when the agent opens (F2), not on every visual exit, so Esc and
--- yanks dismiss the selection instead of leaving stale agent context behind.
+-- popup. Called when the agent opens, not on every visual exit, so Esc and yanks
+-- dismiss the selection instead of leaving stale agent context behind.
 --
--- When F2 is pressed from visual mode the '< / '> marks aren't set yet and the
--- ModeChanged exit may not have run, so we read the live selection straight
+-- When the agent opens from visual mode the '< / '> marks aren't set yet and
+-- the ModeChanged exit may not have run, so we read the live selection straight
 -- from the visual anchor ('v') and cursor ('.') and refresh the cache here.
 function M.paint_selection()
   if in_visual_mode() then
@@ -183,7 +180,7 @@ local function mark_visual_enter()
 end
 
 --- Leaving visual mode by Esc, yank, or an edit means the user has dismissed the
---- selection. Keep it only for the explicit visual-mode F2 handoff path, where
+--- selection. Keep it only for the explicit visual-mode agent handoff path, where
 --- paint_selection() captured the live range before focus moved to the agent.
 local function clear_dismissed_selection()
   if preserve_next_visual_exit then

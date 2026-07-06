@@ -1,8 +1,9 @@
 --- MCP stdio bridge, run by the agent as: nvim -l mcp_bridge.lua
 ---
 --- The agent (Codex or Claude Code) spawns this process per its MCP server
---- config. It speaks MCP JSON-RPC (newline-delimited) on stdio and relays
---- tools/call to the user's *running* Neovim instance over msgpack-RPC.
+--- config. It speaks MCP JSON-RPC (one message per line) on stdio, serves the
+--- tool schema from the user's *running* Neovim instance, and relays tools/call
+--- requests back to that instance over msgpack-RPC.
 ---
 --- Socket discovery, in order:
 ---   1. $NVIM                 — set automatically for processes spawned from
@@ -10,7 +11,7 @@
 ---   2. $NVIM_CONTEXT_SOCKET  — exported by the plugin when launching the agent
 ---      / $CODEX_NVIM_SOCKET     (legacy alias, same value)
 ---   3. cwd-keyed lockfile    — written by the plugin on setup()
----   4. "latest" lockfile     — most recently started instance
+---   4. "latest" lockfile     — most recently configured instance
 
 local function find_socket()
   local env = os.getenv("NVIM")

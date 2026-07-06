@@ -6,15 +6,15 @@
 --- Subtlety that drives the whole module: tool handlers run over RPC while
 --- the user is typing in the agent popup, so the *focused* window is the
 --- terminal float, not an editing window. We must never target window 0 —
---- we pick (or create) a real editing window explicitly, skipping the
---- terminal buffer (buftype ~= "") and the agent float (relative ~= "").
+--- we pick a real editing window explicitly, skipping the terminal buffer
+--- (buftype ~= "") and the agent float (relative ~= "").
 
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("buoy_flash")
 
---- A "real" editing window: a non-floating window showing a normal file
---- buffer. Excludes the agent float, terminals, help, quickfix, etc.
+--- A "real" editing window: a non-floating window showing a normal buffer.
+--- Excludes the agent float, terminals, help, quickfix, etc.
 local function is_edit_window(win)
   if vim.api.nvim_win_get_config(win).relative ~= "" then
     return false -- floating (the agent popup)
@@ -62,10 +62,10 @@ local function flash(buf, row)
   end, 1200)
 end
 
---- Move the cursor to {file, line, col}, opening the file if needed.
---- `file` defaults to the user's current file; `col` defaults to 1. Both
---- line and col are 1-based (matching get_cursor_position). Returns a table
---- describing what happened, or { error = ... }.
+--- Move the cursor to {file, line, col}, loading the file into an existing
+--- editing window if needed. `file` defaults to the user's current file; `col`
+--- defaults to 1. Both line and col are 1-based (matching get_cursor_position).
+--- Returns a table describing what happened, or { error = ... }.
 function M.set_cursor_position(opts)
   local line = opts.line
   if type(line) ~= "number" then
@@ -90,9 +90,9 @@ function M.set_cursor_position(opts)
   end
 
   -- Bring the file into the chosen window if it isn't already shown there.
-  -- Reuse the loaded buffer when we can (nvim_win_set_buf respects 'hidden'
-  -- and never errors on an unsaved current buffer); otherwise load fresh so
-  -- ftplugins and LSP attach normally.
+  -- Reuse the loaded buffer when we can; otherwise load fresh so ftplugins and
+  -- LSP attach normally. Neovim still enforces its usual buffer-abandon rules
+  -- for the chosen window.
   local opened = false
   if not already_visible then
     if loaded then

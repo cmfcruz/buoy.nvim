@@ -1,7 +1,7 @@
 --- buoy.nvim
 --- Floats on the surface, anchored to the code.
 --- An agent's official TUI (Codex / Claude Code) in a floating window, plus
---- pull-based editor context via MCP.
+--- MCP-backed editor context and navigation.
 
 local M = {}
 

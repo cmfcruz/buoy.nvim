@@ -102,7 +102,7 @@ M.tools = {
   },
   {
     name = "get_diagnostics",
-    description = "LSP diagnostics (errors/warnings) for the current file, or for the "
+    description = "Neovim diagnostics for the current file, or for the "
       .. "file given in the optional 'file' argument.",
     inputSchema = {
       type = "object",

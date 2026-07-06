@@ -86,7 +86,7 @@ local function start_job()
 end
 
 function M.open()
-  -- Paint a visual-mode F2 handoff so it stays visible while focus is in the
+  -- Paint a visual-mode agent handoff so it stays visible while focus is in the
   -- popup. Esc/yank exits clear the selection instead of caching stale context.
   require("buoy.context").paint_selection()
 
