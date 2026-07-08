@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.2.1...v1.3.0) (2026-07-08)
+
+
+### Features
+
+* keep the captured selection painted after leaving visual mode ([#17](https://github.com/cmfcruz/buoy.nvim/issues/17)) ([68383f3](https://github.com/cmfcruz/buoy.nvim/commit/68383f31b323806ba64d6e8a337a680e179a8fe7))
+
 ## [1.2.1](https://github.com/cmfcruz/buoy.nvim/compare/v1.2.0...v1.2.1) (2026-06-30)
 
 
