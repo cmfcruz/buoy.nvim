@@ -14,6 +14,23 @@ local function buf_valid()
   return state.buf and vim.api.nvim_buf_is_valid(state.buf)
 end
 
+local function clear_context()
+  require("buoy.context").clear_selection()
+end
+
+local function install_close_cleanup(win)
+  vim.api.nvim_create_autocmd("WinClosed", {
+    pattern = tostring(win),
+    once = true,
+    callback = function()
+      clear_context()
+      if state.win == win then
+        state.win = nil
+      end
+    end,
+  })
+end
+
 local function open_window()
   local plugin = require("buoy")
   local cfg = plugin.config.window
@@ -40,6 +57,7 @@ local function open_window()
   end
 
   vim.wo[state.win].winhighlight = "Normal:Normal,FloatBorder:FloatBorder"
+  install_close_cleanup(state.win)
 end
 
 local function start_job()
@@ -54,6 +72,7 @@ local function start_job()
       CODEX_NVIM_SOCKET = plugin.socket,
     },
     on_exit = function()
+      clear_context()
       state.job = nil
       if win_valid() then
         vim.api.nvim_win_close(state.win, true)
@@ -67,6 +86,10 @@ local function start_job()
 end
 
 function M.open()
+  -- Paint a visual-mode agent handoff so it stays visible while focus is in the
+  -- popup. Esc/yank exits clear the selection instead of caching stale context.
+  require("buoy.context").paint_selection()
+
   if win_valid() then
     vim.api.nvim_set_current_win(state.win)
     vim.cmd.startinsert()
@@ -90,6 +113,7 @@ end
 
 function M.hide()
   if win_valid() then
+    clear_context()
     vim.api.nvim_win_close(state.win, true)
     state.win = nil
   end

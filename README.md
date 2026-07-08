@@ -11,11 +11,12 @@
 
 > Floats on the surface, anchored to the code.
 
-A floating window for your AI coding agent — Codex or Claude Code's
-**official TUI** — plus **pull-based editor context**: the agent itself calls
-into your running Neovim (via MCP) to read the current file, cursor position,
-visual selection, open buffers, and LSP diagnostics — the same experience as
-the VS Code integration, without maintaining any chat UI.
+A floating window for your AI coding agent — the **official TUI** for Codex or
+Claude Code — plus **MCP-backed editor context and navigation**: the agent
+itself calls into your running Neovim to read the current file, cursor position,
+visual selection, open buffers, and Neovim diagnostics, or to move your cursor to
+a resolved location — the same experience as the VS Code integration, without
+maintaining any chat UI.
 
 The window **floats on the surface** of your editor; the MCP bridge keeps the
 agent **anchored to the code** — grounded in your live editor state instead of
@@ -64,9 +65,9 @@ git clone https://github.com/cmfcruz/buoy.nvim `
   "$env:LOCALAPPDATA\nvim-data\site\pack\buoy\start\buoy.nvim"
 ```
 
-Start Neovim, open any file, and **press `<F2>`** — Claude Code's
-TUI floats over the editor. (buoy auto-detects which agent CLI is on your
-`$PATH`, preferring Claude Code; no config file required.)
+Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
+floats over the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
+preferring Claude Code; no config file required.)
 
 To update buoy later, pull the clone:
 
@@ -74,8 +75,8 @@ To update buoy later, pull the clone:
 git -C ~/.local/share/nvim/site/pack/buoy/start/buoy.nvim pull
 ```
 
-To also let the agent read your live editor state (selection, open file,
-diagnostics), continue to [Register the MCP server](#register-the-mcp-server).
+To also let the agent inspect your live editor state and move your cursor,
+continue to [Register the MCP server](#register-the-mcp-server).
 
 ## Configuration
 
@@ -126,7 +127,7 @@ codex mcp add buoy -- \
   nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
 ```
 
-Verify with `/mcp` inside the TUI — you should see `buoy` with six
+Verify with `/mcp` inside the TUI — you should see `buoy` with seven
 tools.
 
 ## Teach the agent to use the context
@@ -165,8 +166,9 @@ select code, move the cursor, open the relevant file, or paste the text.
 
 1. `:Buoy` (or `<F2>`) toggles the window. The agent session survives
    hiding the window.
-2. Edit normally, select code in visual mode, then ask the agent things like
-   *"refactor this selection"* — the agent pulls the selection itself.
+2. Edit normally, select code in visual mode, open/focus the agent, then ask
+   things like *"refactor this selection"* — the agent pulls the handoff
+   selection itself.
 
 ## How socket discovery works
 
@@ -178,7 +180,7 @@ running Neovim in this order:
 2. `$NVIM_CONTEXT_SOCKET` — exported by buoy when it launches the
    agent (`$CODEX_NVIM_SOCKET` is also set as a legacy alias)
 3. A cwd-keyed lockfile under `stdpath("cache")/buoy/`
-4. A `latest` lockfile (most recently started instance)
+4. A `latest` lockfile (most recently configured instance)
 
 If your agent sanitizes the environment for MCP children, the lockfiles
 still make discovery work; for multiple simultaneous Neovim instances in
@@ -186,7 +188,7 @@ still make discovery work; for multiple simultaneous Neovim instances in
 
 ## Limitations / roadmap
 
-- Context is pull-based only; there is no push of selection-changed
+- Editor context is pull-based only; there is no push of selection-changed
   events (the agent's MCP client has no use for them anyway).
 - `open_diff` / in-editor approval is intentionally out of scope: the
   official TUI already renders diffs and approvals, which is the point.
