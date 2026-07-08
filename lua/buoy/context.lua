@@ -128,7 +128,7 @@ function M.paint_selection()
     return
   end
 
-  if sel.mode == "V" or not selection_pos or vim.fn.has("nvim-0.10") == 0 then
+  if sel.mode == "V" or not selection_pos or vim.fn.exists("*getregionpos") == 0 then
     -- Linewise (or no getregionpos): whole lines, including past the last
     -- character (hl_eol), matching what linewise visual mode shows.
     for row = sel.start_line, sel.end_line do
