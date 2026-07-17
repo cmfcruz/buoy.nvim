@@ -250,6 +250,8 @@ function M.setup()
     pattern = "[vV\22]*:*", -- leaving visual / V-line / V-block (\22 = Ctrl-V)
     callback = clear_dismissed_selection,
   })
+
+  update_position()
 end
 
 return M
