@@ -123,6 +123,21 @@ function M.open()
   -- Esc/yank exits clear the selection instead of caching stale context.
   require("buoy.context").paint_selection()
 
+  -- Leave visual mode before moving focus: nvim_set_current_win keeps visual
+  -- mode active, so the selection would re-anchor inside the terminal buffer
+  -- and startinsert (a no-op outside normal mode) would never reach terminal
+  -- insert. paint_selection has already captured the handoff, and its
+  -- preserve_next_visual_exit flag keeps it across this mode change.
+  -- (A bare Esc is discarded when executed :normal!-style; CTRL-\ CTRL-N is
+  -- the documented mode-reset that works there.)
+  if vim.fn.mode():match("[vV\22]") then
+    vim.api.nvim_feedkeys(
+      vim.api.nvim_replace_termcodes("<C-\\><C-n>", true, false, true),
+      "nx",
+      false
+    )
+  end
+
   if win_valid() then
     vim.api.nvim_set_current_win(state.win)
     vim.cmd.startinsert()
