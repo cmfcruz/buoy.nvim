@@ -99,7 +99,11 @@ require("buoy").setup({
     toggle = "<S-F2>",        -- show/hide the agent window; set to false to disable
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
-  window = { style = "float", width = 0.4, border = "rounded" },
+  window = {
+    style = "float",          -- "float" (default) | "vsplit"
+    width = 0.4,              -- fraction of the editor width
+    border = "rounded",       -- float style only; any :h nvim_open_win() border
+  },
 })
 ```
 
@@ -121,6 +125,12 @@ require("buoy").setup({
   agent session survives). If your terminal emulator doesn't deliver `<S-F2>`,
   set `keymaps.toggle` to another key. Either mapping can also be `false`;
   `:BuoyToggle` shows or hides the window, while `:Buoy` opens or focuses it.
+- **Window:** `window.style` is `"float"` (default) or `"vsplit"` — a float
+  overlays the editor along its right edge, while a vsplit opens a regular
+  right-hand split. `window.width` is a fraction of the editor's width
+  (default `0.4`). `window.border` applies to the float style only and accepts
+  any border value from `:h nvim_open_win()` (`"rounded"`, `"single"`,
+  `"double"`, `"none"`, ...).
 - Every key is optional; anything you omit keeps its default.
 
 ## Per-prompt context enrichment
