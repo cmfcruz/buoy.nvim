@@ -1,0 +1,98 @@
+local M = {}
+
+local source = debug.getinfo(1, "S").source
+local module_file = source:sub(1, 1) == "@" and source:sub(2) or source
+local plugin_root = vim.fn.fnamemodify(module_file, ":p:h:h:h")
+
+function M.append_instructions(existing, additional)
+  if type(existing) == "string" and existing ~= "" then
+    return existing .. "\n\n" .. additional
+  end
+  return additional
+end
+
+--- POSIX single-quoting. Not vim.fn.shellescape(): that tracks the user's
+--- 'shell' option, while these commands are interpreted by agent POSIX shells.
+local function shell_quote(s)
+  return "'" .. s:gsub("'", "'\\''") .. "'"
+end
+
+local function headless_script_command(script)
+  return shell_quote(vim.v.progpath)
+    .. " --headless -u NONE -i NONE -l "
+    .. shell_quote(plugin_root .. "/bridge/" .. script)
+end
+
+function M.cli_prefix()
+  return headless_script_command("agent_cli.lua")
+end
+
+function M.neovim_instructions()
+  return ([[## Neovim context
+
+A fresh snapshot of the current file, cursor, visual selection, cwd, and open buffers is
+attached to every user prompt. For additional live editor state, use this private CLI:
+
+`%s`
+
+- `get_buffer_range --start-line N --end-line N [--file ABSOLUTE_PATH]`
+- `get_diagnostics [--file ABSOLUTE_PATH] [--offset N]`
+- `set_cursor_position --line N [--col N] [--file ABSOLUTE_PATH]`
+
+Use buffer reads for code outside the snapshot, including unsaved edits, and diagnostics
+for editor errors or warnings. Move the cursor only when the user explicitly asks for a
+jump and the destination is resolved; if they ask where something is, answer without
+moving.
+
+The CLI connects through a session-local Neovim socket, so every invocation requires the
+agent's normal permission-escalation mechanism. Use that mechanism on the first attempt;
+do not try the command in a restricted shell sandbox first. Do not inspect, print,
+discover, or substitute another socket. If permission is denied or the command reports
+`RPC_FAILED`, report that live editor access is unavailable.]]):format(M.cli_prefix())
+end
+
+--- Shell command both agents register as the UserPromptSubmit hook. Kept
+--- stable across sessions (no per-session socket embedded) so Codex's
+--- persisted hook trust survives relaunches; the hook script discovers the
+--- socket from the environment exported in terminal.lua.
+function M.hook_command()
+  return headless_script_command("context_hook.lua")
+end
+
+function M.codex_argv(cmd, developer_instructions, hook_command)
+  local argv = { cmd }
+  if developer_instructions then
+    vim.list_extend(argv, {
+      "-c",
+      "developer_instructions=" .. vim.json.encode(developer_instructions),
+    })
+  end
+  -- The structure is hand-written TOML (inline tables); vim.json.encode()
+  -- renders the command as a compatible TOML basic string.
+  vim.list_extend(argv, {
+    "-c",
+    'hooks.UserPromptSubmit=[{hooks=[{type="command",command='
+      .. vim.json.encode(hook_command)
+      .. ",timeout=10}]}]",
+  })
+  return argv
+end
+
+function M.claude_argv(cmd, system_instructions, hook_command)
+  local settings = {
+    hooks = {
+      UserPromptSubmit = {
+        { hooks = { { type = "command", command = hook_command, timeout = 10 } } },
+      },
+    },
+  }
+  return {
+    cmd,
+    "--append-system-prompt",
+    system_instructions,
+    "--settings",
+    vim.json.encode(settings),
+  }
+end
+
+return M

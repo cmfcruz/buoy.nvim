@@ -5,10 +5,7 @@
   "packages": {
     ".": {
       "package-name": "buoy.nvim",
-      "extra-files": [
-        "version.txt",
-        "bridge/mcp_bridge.lua"
-      ]
+      "extra-files": ["version.txt"]
     }
   }
 }

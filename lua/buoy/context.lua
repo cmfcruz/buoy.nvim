@@ -1,31 +1,36 @@
 --- Tracks editor context (file, cursor, active handoff selection) from
---- *real* buffers. This cache is what the MCP tools serve, because when
---- the user is typing in the agent popup, the "current" window is the
+--- *real* buffers. This cache is what the agent CLI reads, because when
+--- the user is typing in the agent terminal, the "current" window is the
 --- terminal — the interesting context is wherever they were editing.
 
 local M = {}
 
-M.state = {
+-- The active selection handoff owns its agent-facing payload and all editor-only
+-- state needed to preserve and repaint it. M.state.selection exposes only payload.
+local selection_handoff = nil
+local clear_selection
+
+M.state = setmetatable({
   file = nil, -- absolute path of last real file buffer
   filetype = nil,
   cursor = nil, -- { line = 1-based, col = 1-based }
-  selection = nil, -- { file, start_line, end_line, start_col, end_col, mode, text }
-}
+}, {
+  __index = function(_, key)
+    if key == "selection" then
+      return selection_handoff and selection_handoff.payload
+    end
+  end,
+  __newindex = function(state, key, _)
+    if key == "selection" then
+      clear_selection()
+      return
+    end
+    rawset(state, key, _)
+  end,
+})
 
 -- Namespace for the persistent selection highlight (see paint_selection).
 local ns = vim.api.nvim_create_namespace("BuoyContextSelection")
--- Buffer that currently holds the painted highlight, so we can clear it.
-local highlighted_buf = nil
--- Buffer of the cached selection, kept out of M.state.selection (which the MCP
--- server serves verbatim) so the agent isn't handed an internal buffer number.
-local selection_buf = nil
--- Ordered getpos()-style start/end positions of the cached selection, kept for
--- repainting the exact charwise/blockwise region (M.state.selection only carries
--- the normalized line/column numbers the MCP exposes).
-local selection_pos = nil
--- Opening the agent from visual mode is an explicit selection handoff.
--- The following visual-mode exit should not clear the just-captured selection.
-local preserve_next_visual_exit = false
 
 local function is_real_buffer(buf)
   return vim.bo[buf].buftype == "" and vim.api.nvim_buf_get_name(buf) ~= ""
@@ -33,18 +38,18 @@ end
 
 --- Clear any extmarks from the previously painted handoff selection.
 local function clear_selection_highlight()
+  local highlighted_buf = selection_handoff and selection_handoff.highlighted_buf
   if highlighted_buf and vim.api.nvim_buf_is_valid(highlighted_buf) then
     vim.api.nvim_buf_clear_namespace(highlighted_buf, ns, 0, -1)
   end
-  highlighted_buf = nil
+  if selection_handoff then
+    selection_handoff.highlighted_buf = nil
+  end
 end
 
-local function clear_selection()
-  M.state.selection = nil
-  selection_buf = nil
-  selection_pos = nil
-  preserve_next_visual_exit = false
+clear_selection = function()
   clear_selection_highlight()
+  selection_handoff = nil
 end
 
 M.clear_selection = clear_selection
@@ -55,8 +60,8 @@ end
 
 -- Build the handoff selection from two getpos()-style positions and a visual mode
 -- char ("v"/"V"/Ctrl-V). Orders the positions, extracts the exact text with
--- getregion() (nvim 0.10+, whole lines otherwise), and records the buffer
--- separately from M.state.selection so the MCP-served payload stays buffer-free.
+-- getregion() (Neovim 0.10+, whole lines otherwise), and records editor-only
+-- details beside the payload so the agent is not handed internal buffer state.
 --
 -- start_col/end_col are 1-based, inclusive byte columns so the agent can locate
 -- a sub-line selection precisely. Linewise (V) selections span whole lines, and
@@ -84,17 +89,21 @@ local function set_selection(buf, p1, p2, vmode)
     end_col = math.min(e[3], math.max(line_byte_len(buf, e[2]), 1))
   end
 
-  M.state.selection = {
-    file = vim.api.nvim_buf_get_name(buf),
-    start_line = s[2],
-    end_line = e[2],
-    start_col = start_col,
-    end_col = end_col,
-    mode = vmode,
-    text = text,
+  selection_handoff = {
+    payload = {
+      file = vim.api.nvim_buf_get_name(buf),
+      start_line = s[2],
+      end_line = e[2],
+      start_col = start_col,
+      end_col = end_col,
+      mode = vmode,
+      text = text,
+    },
+    buf = buf,
+    pos = { s, e },
+    highlighted_buf = selection_handoff and selection_handoff.highlighted_buf,
+    preserve_next_visual_exit = false,
   }
-  selection_buf = buf
-  selection_pos = { s, e }
 end
 
 local function in_visual_mode()
@@ -102,11 +111,38 @@ local function in_visual_mode()
   return m == "v" or m == "V" or m == "\22"
 end
 
--- Paint the handoff selection so it stays visible while focus is in the agent
--- popup. Called when the agent opens, not on every visual exit, so Esc and yanks
+--- Capture the range passed to an Ex command as an explicit selection handoff.
+--- Visual-mode `:` commands run after Neovim has returned to Normal mode, but
+--- the exact `'<` and `'>` marks and visual mode are still available. If those marks
+--- do not match the supplied lines (for example, `:2,5Buoy` typed directly),
+--- treat the command range as a linewise handoff instead of reusing stale marks.
+function M.capture_command_selection(first_line, last_line)
+  local buf = vim.api.nvim_get_current_buf()
+  if not is_real_buffer(buf) then
+    return
+  end
+
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  local vmode = vim.fn.visualmode()
+  local marks_match = start_pos[2] == first_line
+    and end_pos[2] == last_line
+    and (vmode == "v" or vmode == "V" or vmode == "\22")
+
+  if not marks_match then
+    start_pos = { 0, first_line, 1, 0 }
+    end_pos = { 0, last_line, math.max(line_byte_len(buf, last_line), 1), 0 }
+    vmode = "V"
+  end
+
+  set_selection(buf, start_pos, end_pos, vmode)
+end
+
+-- Paint the handoff selection so it stays visible while focus is in the agent.
+-- Called when the agent window opens, not on every visual exit, so Esc and yanks
 -- dismiss the selection instead of leaving stale agent context behind.
 --
--- When the agent opens from visual mode the '< / '> marks aren't set yet and
+-- When the agent opens from visual mode the `'<` and `'>` marks aren't set yet and
 -- the ModeChanged exit may not have run, so we read the live selection straight
 -- from the visual anchor ('v') and cursor ('.') and refresh the cache here.
 function M.paint_selection()
@@ -114,25 +150,26 @@ function M.paint_selection()
     local buf = vim.api.nvim_get_current_buf()
     if is_real_buffer(buf) then
       set_selection(buf, vim.fn.getpos("v"), vim.fn.getpos("."), vim.fn.mode())
-      preserve_next_visual_exit = true
+      selection_handoff.preserve_next_visual_exit = true
     end
   end
 
   clear_selection_highlight()
-  local sel = M.state.selection
-  if not sel then
+  local handoff = selection_handoff
+  if not handoff then
     return
   end
-  if not (selection_buf and vim.api.nvim_buf_is_valid(selection_buf)) then
+  if not vim.api.nvim_buf_is_valid(handoff.buf) then
     clear_selection()
     return
   end
 
-  if sel.mode == "V" or not selection_pos or vim.fn.exists("*getregionpos") == 0 then
+  local sel = handoff.payload
+  if sel.mode == "V" or vim.fn.exists("*getregionpos") == 0 then
     -- Linewise (or no getregionpos): whole lines, including past the last
     -- character (hl_eol), matching what linewise visual mode shows.
     for row = sel.start_line, sel.end_line do
-      vim.api.nvim_buf_set_extmark(selection_buf, ns, row - 1, 0, {
+      vim.api.nvim_buf_set_extmark(handoff.buf, ns, row - 1, 0, {
         line_hl_group = "Visual",
         hl_eol = true,
       })
@@ -143,13 +180,11 @@ function M.paint_selection()
     -- inclusive end; the inclusive 1-based end maps straight to the exclusive
     -- 0-based extmark end_col (+off for selections reaching past EOL). Clamp to
     -- the line so set_extmark can't error on an out-of-range column.
-    for _, seg in
-      ipairs(vim.fn.getregionpos(selection_pos[1], selection_pos[2], { type = sel.mode }))
-    do
+    for _, seg in ipairs(vim.fn.getregionpos(handoff.pos[1], handoff.pos[2], { type = sel.mode })) do
       local p1, p2 = seg[1], seg[2]
       local row = p2[2]
-      local len = #(vim.api.nvim_buf_get_lines(selection_buf, row - 1, row, false)[1] or "")
-      vim.api.nvim_buf_set_extmark(selection_buf, ns, p1[2] - 1, p1[3] - 1, {
+      local len = #(vim.api.nvim_buf_get_lines(handoff.buf, row - 1, row, false)[1] or "")
+      vim.api.nvim_buf_set_extmark(handoff.buf, ns, p1[2] - 1, p1[3] - 1, {
         end_row = row - 1,
         end_col = math.min(p2[3] + p2[4], len),
         hl_group = "Visual",
@@ -157,7 +192,7 @@ function M.paint_selection()
     end
   end
 
-  highlighted_buf = selection_buf
+  handoff.highlighted_buf = handoff.buf
 end
 
 local function update_position()
@@ -183,8 +218,8 @@ end
 --- selection. Keep it only for the explicit visual-mode agent handoff path, where
 --- paint_selection() captured the live range before focus moved to the agent.
 local function clear_dismissed_selection()
-  if preserve_next_visual_exit then
-    preserve_next_visual_exit = false
+  if selection_handoff and selection_handoff.preserve_next_visual_exit then
+    selection_handoff.preserve_next_visual_exit = false
     return
   end
 
