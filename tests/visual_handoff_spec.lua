@@ -102,9 +102,7 @@ end, debug.traceback)
 vim.fn.delete(temp, "rf")
 
 if not ok then
-  io.stderr:write(tostring(err) .. "\n")
-  os.exit(1)
+  error(err)
 end
 
-print("visual_handoff_spec: OK")
-os.exit(0)
+print("visual_handoff_spec: ok")
