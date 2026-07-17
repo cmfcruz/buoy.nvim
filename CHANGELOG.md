@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.0.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.3.0...v2.0.0) (2026-07-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* Buoy no longer configures an MCP server. Live editor operations use the private CLI on Linux and macOS, Windows keeps terminal-only support, and the undocumented CODEX_NVIM_SOCKET alias is removed.
+
+### Features
+
+* replace MCP with a private agent CLI ([#19](https://github.com/cmfcruz/buoy.nvim/issues/19)) ([7ddb0ad](https://github.com/cmfcruz/buoy.nvim/commit/7ddb0ad850d721a6c51360f7d434f60f8d1bf16d))
+
 ## [1.3.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.2.1...v1.3.0) (2026-07-08)
 
 
