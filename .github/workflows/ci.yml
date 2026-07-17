@@ -11,19 +11,51 @@ permissions:
   contents: read
 
 jobs:
+  test:
+    name: Test (Neovim ${{ matrix.neovim }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    continue-on-error: ${{ matrix.neovim == 'nightly' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        neovim: [v0.9.5, stable, nightly]
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install Neovim
+        uses: rhysd/action-setup-vim@febef33995d6649302e9d88dda81e071b68f16a7 # v1.6.1
+        with:
+          version: ${{ matrix.neovim }}
+          neovim: true
+
+      - name: Run headless tests
+        run: |
+          for spec in tests/*_spec.lua; do
+            nvim --headless -u NONE -i NONE -l "$spec"
+          done
+
   format:
     name: Format (StyLua)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    env:
+      STYLUA_VERSION: "2.5.2"
+      STYLUA_SHA256: "bcb0d855e91f102f28a370e850f8566b3b44b79e6274d806ea5246837c0fd5ab"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Install StyLua
+        run: |
+          curl -fsSL -o stylua.zip \
+            "https://github.com/JohnnyMorganz/stylua/releases/download/v${STYLUA_VERSION}/stylua-linux-x86_64.zip"
+          echo "${STYLUA_SHA256}  stylua.zip" | sha256sum -c -
+          unzip -o stylua.zip
+          chmod +x stylua
+          echo "$PWD" >> "$GITHUB_PATH"
 
       - name: Check formatting (StyLua)
-        uses: JohnnyMorganz/stylua-action@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          version: "2.5.2"
-          args: --check .
+        run: stylua --check .
 
   lint:
     name: Lint (Selene)
@@ -31,13 +63,15 @@ jobs:
     timeout-minutes: 10
     env:
       SELENE_VERSION: "0.31.0"
+      SELENE_SHA256: "0580eed94b56e8b4bad3b1d6f5a4f9e1a9f5d88ae5bc511290c3cd33cc5e0360"
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Install Selene
         run: |
           curl -fsSL -o selene.zip \
             "https://github.com/Kampfkarren/selene/releases/download/${SELENE_VERSION}/selene-light-${SELENE_VERSION}-linux.zip"
+          echo "${SELENE_SHA256}  selene.zip" | sha256sum -c -
           unzip -o selene.zip
           chmod +x selene
           echo "$PWD" >> "$GITHUB_PATH"

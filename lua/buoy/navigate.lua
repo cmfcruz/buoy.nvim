@@ -4,20 +4,24 @@
 --- observes; this one acts on the editor.
 ---
 --- Subtlety that drives the whole module: tool handlers run over RPC while
---- the user is typing in the agent popup, so the *focused* window is the
---- terminal float, not an editing window. We must never target window 0 —
+--- the user is typing in the agent, so the *focused* window is its terminal,
+--- not an editing window. We must never target window 0 —
 --- we pick a real editing window explicitly, skipping the terminal buffer
---- (buftype ~= "") and the agent float (relative ~= "").
+--- (buftype ~= "") and every floating window (relative ~= "").
 
 local M = {}
 
 local ns = vim.api.nvim_create_namespace("buoy_flash")
 
+local function err(code, message)
+  return { kind = "error", code = code, message = message }
+end
+
 --- A "real" editing window: a non-floating window showing a normal buffer.
 --- Excludes the agent float, terminals, help, quickfix, etc.
 local function is_edit_window(win)
   if vim.api.nvim_win_get_config(win).relative ~= "" then
-    return false -- floating (the agent popup)
+    return false -- floating window
   end
   return vim.bo[vim.api.nvim_win_get_buf(win)].buftype == ""
 end
@@ -27,27 +31,25 @@ end
 ---   2. the window showing the user's last-edited file (their "active" editor)
 ---   3. any real editing window
 --- Returns (win, already_visible) or (nil, false) if there is no usable
---- editing window at all (e.g. only the agent float is open).
+--- editing window at all (e.g. only the agent window is open).
 local function pick_window(target_buf, prefer_file)
-  if target_buf and target_buf ~= -1 then
-    local win = vim.fn.bufwinid(target_buf)
-    if win ~= -1 then
-      return win, true
-    end
-  end
-
-  local candidates = {}
+  -- Only a real editing window counts as "already visible": the target being
+  -- shown in a floating window (a preview popup, say) must not make that
+  -- float the navigation destination.
+  local preferred, fallback
   for _, win in ipairs(vim.api.nvim_list_wins()) do
     if is_edit_window(win) then
-      if
-        prefer_file and vim.api.nvim_buf_get_name(vim.api.nvim_win_get_buf(win)) == prefer_file
-      then
-        return win, false
+      local buf = vim.api.nvim_win_get_buf(win)
+      if target_buf and target_buf ~= -1 and buf == target_buf then
+        return win, true
       end
-      candidates[#candidates + 1] = win
+      if prefer_file and vim.api.nvim_buf_get_name(buf) == prefer_file then
+        preferred = preferred or win
+      end
+      fallback = fallback or win
     end
   end
-  return candidates[1], false
+  return preferred or fallback, false
 end
 
 --- Briefly highlight the destination line so the eye catches why the view
@@ -64,30 +66,37 @@ end
 
 --- Move the cursor to {file, line, col}, loading the file into an existing
 --- editing window if needed. `file` defaults to the user's current file; `col`
---- defaults to 1. Both line and col are 1-based (matching get_cursor_position).
---- Returns a table describing what happened, or { error = ... }.
+--- defaults to 1. Both line and col are 1-based.
+--- Returns a structured success or error table.
 function M.set_cursor_position(opts)
   local line = opts.line
   if type(line) ~= "number" then
-    return { error = "line is required (1-based)." }
+    return err("INVALID_ARGUMENT", "line must be a positive integer.")
   end
 
   local target = opts.file or require("buoy.context").state.file
   if not target then
-    return { error = "No file given and no current file in context." }
+    return err("NO_FILE_IN_CONTEXT", "No file argument and no current file in context.")
   end
   target = vim.fn.fnamemodify(target, ":p")
 
   local buf = vim.fn.bufnr(target)
   local loaded = buf ~= -1 and vim.api.nvim_buf_is_loaded(buf)
   if not loaded and vim.fn.filereadable(target) == 0 then
-    return { error = "File not found: " .. target }
+    return err("FILE_NOT_FOUND", "File is not open and does not exist on disk.")
   end
 
   local win, already_visible = pick_window(buf, require("buoy.context").state.file)
   if not win then
-    return { error = "No editing window available to navigate in." }
+    return err("NO_EDIT_WINDOW", "No editing window available to navigate in.")
   end
+
+  -- Seed the destination window's jumplist with its current position before
+  -- any movement: nvim_win_set_buf and nvim_win_set_cursor record no jump
+  -- themselves, and this is what makes a single Ctrl-O reverse the move.
+  vim.api.nvim_win_call(win, function()
+    vim.cmd("normal! m'")
+  end)
 
   -- Bring the file into the chosen window if it isn't already shown there.
   -- Reuse the loaded buffer when we can; otherwise load fresh so ftplugins and
@@ -119,6 +128,7 @@ function M.set_cursor_position(opts)
   flash(buf, row)
 
   return {
+    kind = "cursor_position",
     file = target,
     line = row,
     col = col0 + 1,

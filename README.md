@@ -3,7 +3,6 @@
 [![Release](https://img.shields.io/github/v/release/cmfcruz/buoy.nvim?label=release)](https://github.com/cmfcruz/buoy.nvim/releases)
 [![License](https://img.shields.io/github/license/cmfcruz/buoy.nvim)](LICENSE)
 ![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-57A143?logo=neovim&logoColor=white)
-![MCP](https://img.shields.io/badge/MCP-stdio-5D6DFF)
 
 <p align="center">
   <img src="buoy.png" alt="buoy.nvim" width="400">
@@ -12,13 +11,15 @@
 > Floats on the surface, anchored to the code.
 
 A floating window for your AI coding agent — the **official TUI** for Codex or
-Claude Code — plus **MCP-backed editor context and navigation**: the agent
-itself calls into your running Neovim to read the current file, cursor position,
-visual selection, open buffers, and Neovim diagnostics, or to move your cursor to
-a resolved location — the same experience as the VS Code integration, without
+Claude Code — plus **live editor context and navigation**: every prompt you
+submit automatically carries a focused snapshot of the current file, cursor
+position, visual selection, and open buffers, added by a prompt hook that
+reads your running Neovim. When it needs more, the agent can use buoy's private
+CLI to read targeted buffer ranges and diagnostics or move your cursor to a
+resolved location — the same experience as the VS Code integration, without
 maintaining any chat UI.
 
-The window **floats on the surface** of your editor; the MCP bridge keeps the
+The window **floats on the surface** of your editor; the live bridge keeps the
 agent **anchored to the code** — grounded in your live editor state instead of
 whatever you remember to paste.
 
@@ -27,12 +28,13 @@ whatever you remember to paste.
 │  editing buffers              │  › what does this      │
 │  autocmds cache:              │    selection do?       │
 │   file / cursor / selection   │                        │
-│        ▲                      │  [calls MCP tool       │
-│        │ msgpack-RPC          │   get_current_selection│
-│  ┌─────┴──────┐   stdio MCP   │   mid-turn]            │
-│  │ mcp_bridge │◄──────────────┤                        │
-│  └────────────┘  (spawned by  │                        │
-│                   the agent)  │                        │
+│        ▲                      │  [context_hook enriches│
+│        │ msgpack-RPC          │   every prompt with the│
+│  ┌─────┴──────────────┐       │   private agent CLI    │
+│  │ context_hook /     │       │   widen context        │
+│  │ agent_cli          │◄──────┤   mid-turn]            │
+│  └────────────────────┘       │                        │
+│      (spawned by the agent)   │                        │
 └───────────────────────────────┴────────────────────────┘
 ```
 
@@ -46,10 +48,9 @@ whatever you remember to paste.
 buoy.nvim runs inside Neovim, so installing it means cloning it where Neovim
 looks. Neovim loads anything in its built-in `pack/*/start/` folder
 automatically at startup, and buoy configures itself with sensible defaults on
-first load. Setup comes in two parts: **clone-and-launch** (below) gets you the
-floating agent TUI, and a one-time
-[MCP registration](#register-the-mcp-server) is what lets the agent pull your
-live editor state. The clone is the only step needed to try the window.
+first load. On Linux and macOS, the clone is the only step: buoy enriches every
+prompt with live editor state and attaches its private CLI when it launches the
+agent (see [Live editor bridge](#live-editor-bridge)).
 
 **Linux/macOS:**
 
@@ -69,14 +70,19 @@ Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
 floats over the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
 preferring Claude Code; no config file required.)
 
+On Windows, the terminal UI works normally, but v2 does not attach the POSIX
+prompt hook or live editor CLI. Buoy warns once when the agent starts.
+
 To update buoy later, pull the clone:
 
 ```sh
 git -C ~/.local/share/nvim/site/pack/buoy/start/buoy.nvim pull
 ```
 
-To also let the agent inspect your live editor state and move your cursor,
-continue to [Register the MCP server](#register-the-mcp-server).
+On Linux and macOS, the agent's view of your live editor state needs no extra
+setup — it is configured at launch; see
+[Per-prompt context enrichment](#per-prompt-context-enrichment) and
+[Live editor bridge](#live-editor-bridge) for how it works.
 
 ## Configuration
 
@@ -88,7 +94,10 @@ default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
 ```lua
 require("buoy").setup({
   agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex"
-  keymaps = { toggle = "<leader>a" },  -- change the toggle key; set to false to disable
+  keymaps = {
+    focus = "<F2>",           -- open/switch focus terminal <-> last window; set to false to disable
+    toggle = "<S-F2>",        -- show/hide the agent window; set to false to disable
+  },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
   window = { style = "float", width = 0.4, border = "rounded" },
 })
@@ -96,108 +105,109 @@ require("buoy").setup({
 
 - **Switch to Codex:** set `agent = "codex"`. (With the default `"auto"`,
   buoy uses Codex anyway if it's the only CLI on your `$PATH`.)
-- **Change the hotkey:** set `keymaps.toggle` to any key, or `false` to map
-  nothing and drive it with `:Buoy` / `:BuoyFocus`.
+- **Override per session:** set the `BUOY_AGENT` environment variable
+  (e.g. `BUOY_AGENT=codex nvim`) — it takes precedence over the `agent`
+  configured in `setup()`.
+- **Config applies at startup:** buoy initializes once per Neovim session —
+  the first `setup()` (or the zero-config defaults, shortly after startup)
+  wins, and later calls only warn. Call `setup()` during startup rather than
+  from a deferred hook, edit + restart Neovim to change the configuration,
+  and use `BUOY_AGENT` for a one-off agent switch.
+- **Switch focus without hiding:** `<F2>` (`keymaps.focus`) opens the agent
+  window, or — when it's already open — moves the cursor between the terminal
+  and your last window, so you can scroll code while the agent's output stays
+  visible.
+- **Show/hide:** `<S-F2>` (`keymaps.toggle`) hides the window entirely (the
+  agent session survives). If your terminal emulator doesn't deliver `<S-F2>`,
+  set `keymaps.toggle` to another key. Either mapping can also be `false`;
+  `:BuoyToggle` shows or hides the window, while `:Buoy` opens or focuses it.
 - Every key is optional; anything you omit keeps its default.
 
-## Register the MCP server
+## Per-prompt context enrichment
 
-The bridge is a standard stdio MCP server. Register it with your agent's own
-CLI — no need to find or hand-edit a config file, and the shell fills in the
-absolute path for you (the agents spawn MCP servers without a shell, so the
-path *must* be absolute — `~/...` in a config file would not expand).
+On Linux and macOS, buoy registers a `UserPromptSubmit` hook
+(`bridge/context_hook.lua`) with both agents: before the model sees each prompt,
+the hook prints a focused snapshot of your editor state — cwd, current file,
+cursor, visual selection, and open buffers — which the agent attaches as
+context. Enrichment is deterministic (there is no tool call for the model to
+skip) and costs no extra inference round trip.
 
-Run **one** of these, matching the agent you use. `$HOME` is the only thing
-the shell substitutes:
+For Claude Code the hook rides in an inline `--settings` JSON. For Codex it is
+a session-scoped `-c hooks.UserPromptSubmit=...` override. Codex requires you
+to review and trust the hook definition before it can run, then remembers that
+trust while the definition stays unchanged.
 
-**Claude Code:**
+If the hook cannot reach your Neovim it prints nothing and never blocks the
+prompt.
 
-```sh
-claude mcp add -s user buoy -- \
-  nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
-```
+## Live editor bridge
 
-(`-s user` registers it for all your projects; drop it to scope to the
-current project only. Codex's `mcp add` is global by default.)
+On Linux and macOS, buoy gives the agent a compact command prefix for its
+private `bridge/agent_cli.lua` adapter. The agent invokes it through its normal
+shell tool when it needs a live buffer range, diagnostics, or an explicitly
+requested cursor jump. The CLI connects only to the Neovim session that
+launched the terminal, returns one bounded JSON object, and follows the agent's
+normal shell approval policy. It is an internal integration surface, not a
+globally installed user command.
 
-**Codex:**
+## Agent instructions
 
-```sh
-codex mcp add buoy -- \
-  nvim -l "$HOME/.local/share/nvim/site/pack/buoy/start/buoy.nvim/bridge/mcp_bridge.lua"
-```
+buoy automatically adds its Neovim context guidance when it launches the
+agent. For Claude Code it uses `--append-system-prompt`. For Codex, buoy first
+asks `codex app-server` for the effective `developer_instructions` at Neovim's
+working directory, then appends its guidance without changing Codex's normal
+configuration precedence.
 
-Verify with `/mcp` inside the TUI — you should see `buoy` with seven
-tools.
+If the Codex configuration cannot be resolved within two seconds, buoy shows a
+warning and launches Codex without a developer-instructions override. This
+preserves the instructions Codex would normally load instead of replacing them
+with incomplete context. The prompt hook remains active, but on-demand live
+operations are unavailable for that session; buoy does not retry configuration
+resolution.
 
-## Teach the agent to use the context
+## Upgrading to v2
 
-Add the following to the instructions file your agent reads — `AGENTS.md`
-(or `~/.codex/AGENTS.md` globally) for Codex, or `CLAUDE.md`
-(or `~/.claude/CLAUDE.md` globally) for Claude Code:
+Buoy v2 no longer configures an MCP server. On Linux and macOS, live editor
+operations use buoy's private, session-scoped agent CLI while automatic
+per-prompt context remains unchanged. The agent's normal shell policy must
+allow the local command. Windows keeps the terminal UI but does not receive
+live editor context in v2.
 
-```markdown
-## Neovim context
-
-You may be running inside the user's Neovim through `buoy`. If the
-`buoy` MCP server is available, use it to inspect editor state instead
-of asking the user to paste code.
-
-When the user refers to "this", "here", "the selection", "this file",
-"the current buffer", open files, diagnostics, errors, or warnings:
-
-- Use `get_current_selection` for selected/highlighted code.
-- Use `get_current_file` for the current file path, filetype, and cwd.
-- Use `get_cursor_position` for the cursor location and nearby lines.
-- Use `get_buffer_range` to widen the view around the cursor — the enclosing
-  function, imports, or nearby code — reflecting unsaved edits.
-- Use `get_open_buffers` when the user refers to another open file or buffer.
-- Use `get_diagnostics` when the user asks about errors, warnings, LSP, or failing code.
-- Use `set_cursor_position` to move the user's cursor to a place ("take me to the
-  `parse_config` definition", "jump to the next failing test"). Resolve the
-  target to a concrete line yourself first. When the user only asks *where*
-  something is, answer in text and offer to jump rather than moving unprompted.
-
-If a tool returns no useful data, say that briefly and ask the user to
-select code, move the cursor, open the relevant file, or paste the text.
-```
+The undocumented `CODEX_NVIM_SOCKET` alias was removed. Restart Neovim after
+updating buoy so the running Lua modules and launch instructions match v2.
+Users who require the old MCP integration can remain on the final v1 release.
 
 ## Usage
 
-1. `:Buoy` (or `<F2>`) toggles the window. The agent session survives
-   hiding the window.
-2. Edit normally, select code in visual mode, open/focus the agent, then ask
-   things like *"refactor this selection"* — the agent pulls the handoff
-   selection itself.
-
-## How socket discovery works
-
-The agent spawns the bridge as a child process. The bridge finds your
-running Neovim in this order:
-
-1. `$NVIM` — set automatically for processes spawned from inside Neovim,
-   if the agent forwards its environment to MCP servers
-2. `$NVIM_CONTEXT_SOCKET` — exported by buoy when it launches the
-   agent (`$CODEX_NVIM_SOCKET` is also set as a legacy alias)
-3. A cwd-keyed lockfile under `stdpath("cache")/buoy/`
-4. A `latest` lockfile (most recently configured instance)
-
-If your agent sanitizes the environment for MCP children, the lockfiles
-still make discovery work; for multiple simultaneous Neovim instances in
-*different* directories, the cwd-keyed lockfile picks the right one.
+1. `<F2>` opens the window, or switches focus between the agent and your code
+   when it's already open. `:Buoy` always opens or focuses the agent.
+   `<S-F2>` (or `:BuoyToggle`) shows or hides the window; the agent session
+   survives hiding it.
+2. Edit normally, select code in visual mode, then press `<F2>` or run `:Buoy`
+   directly from the selection. Both paths preserve the handoff selection, so
+   the next prompt automatically carries its range and text.
 
 ## Limitations / roadmap
 
-- Editor context is pull-based only; there is no push of selection-changed
-  events (the agent's MCP client has no use for them anyway).
+- On Linux and macOS, editor context refreshes when you submit a prompt and
+  when the agent invokes the private CLI; buoy does not stream
+  selection-changed events continuously.
+- Windows supports the terminal UI but not the prompt hook or live editor CLI
+  in v2.
 - `open_diff` / in-editor approval is intentionally out of scope: the
   official TUI already renders diffs and approvals, which is the point.
-- Two Neovim instances in the *same* cwd will race on the lockfile;
-  `$NVIM` passthrough resolves this when available.
 
 ## Development
 
 Contributions go through pull requests; `main` is protected by CI.
+
+- **Tests** — run every headless spec with:
+
+  ```sh
+  for spec in tests/*_spec.lua; do
+    nvim --headless -u NONE -i NONE -l "$spec"
+  done
+  ```
 
 - **Formatting** — [StyLua](https://github.com/JohnnyMorganz/StyLua).
   Run `stylua .` (or `stylua --check .` to verify).
@@ -207,7 +217,8 @@ Contributions go through pull requests; `main` is protected by CI.
   StyLua and a few hygiene hooks into your commits (StyLua's binary is
   fetched automatically; install Selene separately if you want it locally).
 
-CI (`.github/workflows/ci.yml`) enforces both checks on every PR.
+CI (`.github/workflows/ci.yml`) runs the tests, formatting check, and lint on
+every PR.
 
 ### Releases
 

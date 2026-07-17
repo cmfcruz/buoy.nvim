@@ -1,124 +1,156 @@
---- MCP tool surface. The bridge calls M.dispatch(name, args) via
---- nvim_exec_lua over the RPC socket. Every handler returns a plain
---- table; the bridge JSON-encodes it into the MCP tool result.
+--- Transport-neutral editor operations. The one-shot agent CLI calls
+--- M.dispatch(name, args) via nvim_exec_lua over the RPC socket. Dispatch
+--- validates the operation arguments, and operation results are bounded so
+--- their encoded JSON stays small.
 
 local M = {}
+
+local MAX_LINES = 500
+local MAX_DIAGNOSTICS = 200
+local MAX_RESULT_BYTES = 24576
 
 local function ctx()
   return require("buoy.context").state
 end
 
-M.tools = {
-  {
-    name = "get_current_file",
-    description = "Path and filetype of the file the user is editing in Neovim. "
-      .. "Call this when the user says 'this file', 'the current file', or similar.",
-    inputSchema = { type = "object", properties = vim.empty_dict() },
-    handler = function()
-      return {
-        file = ctx().file,
-        filetype = ctx().filetype,
-        cwd = vim.fn.getcwd(),
-      }
-    end,
-  },
-  {
-    name = "get_cursor_position",
-    description = "The user's cursor position (1-based line and column) plus a few "
-      .. "surrounding lines for context. Call this when the user says 'here', "
-      .. "'this line', or 'where my cursor is'.",
-    inputSchema = { type = "object", properties = vim.empty_dict() },
-    handler = function()
-      local c = ctx()
-      local around = nil
-      if c.file and c.cursor then
-        local buf = vim.fn.bufnr(c.file)
-        if buf ~= -1 then
-          local first = math.max(c.cursor.line - 5, 1)
-          local lines = vim.api.nvim_buf_get_lines(buf, first - 1, c.cursor.line + 5, false)
-          around = { first_line = first, lines = lines }
-        end
-      end
-      return { file = c.file, cursor = c.cursor, surrounding = around }
-    end,
-  },
+local function err(code, message)
+  return { kind = "error", code = code, message = message }
+end
+
+local function is_pos_int(value)
+  return type(value) == "number" and value >= 1 and value % 1 == 0
+end
+
+--- Resolve the target buffer for a read: explicit absolute `file` argument,
+--- else the user's current file. Returns (buf, nil, path) or (nil, error).
+local function resolve_buffer(args)
+  local target = args.file
+  if target ~= nil then
+    if type(target) ~= "string" or target:sub(1, 1) ~= "/" then
+      return nil, err("INVALID_ARGUMENT", "file must be an absolute path.")
+    end
+  else
+    target = ctx().file
+    if not target then
+      return nil, err("NO_FILE_IN_CONTEXT", "No file argument and no current file in context.")
+    end
+  end
+  target = vim.fn.fnamemodify(target, ":p")
+  local buf = vim.fn.bufnr(target)
+  if buf == -1 or not vim.api.nvim_buf_is_loaded(buf) then
+    return nil, err("BUFFER_NOT_OPEN", "File is not open in Neovim.")
+  end
+  return buf, nil, target
+end
+
+--- Enforce the encoded-byte bound: drop trailing entries from result[key]
+--- until the JSON encoding fits, refreshing continuation fields via `update`.
+--- Returns the bounded result, or a structured encoding or output-limit error.
+local function bound(result, key, update)
+  local ok, encoded = pcall(vim.json.encode, result)
+  local dropped = false
+  while ok and #encoded > MAX_RESULT_BYTES and #result[key] > 0 do
+    table.remove(result[key])
+    update(result)
+    dropped = true
+    ok, encoded = pcall(vim.json.encode, result)
+  end
+  if not ok then
+    return err("ENCODING_ERROR", "Result could not be encoded as JSON.")
+  end
+  if #encoded > MAX_RESULT_BYTES or (dropped and #result[key] == 0) then
+    return err("OUTPUT_LIMIT", "A single result record exceeds the output limit.")
+  end
+  return result
+end
+
+function M.editor_context()
+  local c = ctx()
+  local has_current = c.file ~= nil
+  local current = {
+    file = c.file or vim.NIL,
+    filetype = (has_current and c.filetype) or vim.NIL,
+    cursor = (has_current and c.cursor) or vim.NIL,
+  }
+
+  -- Use getbufinfo() instead of reading vim.bo[] for every listed buffer.
+  -- Option reads on non-current buffers can switch buffer context and trigger
+  -- the terminal resize bug this snapshot must avoid.
+  local buffers = {}
+  for _, info in ipairs(vim.fn.getbufinfo({ buflisted = 1 })) do
+    if info.name ~= "" then
+      table.insert(buffers, {
+        file = info.name,
+        modified = info.changed == 1,
+      })
+    end
+  end
+
+  return {
+    cwd = vim.fn.getcwd(),
+    current = current,
+    selection = c.selection or vim.NIL,
+    buffers = buffers,
+  }
+end
+
+local operations = {
   {
     name = "get_buffer_range",
-    description = "Lines from a file open in Neovim, by line range, reflecting unsaved "
-      .. "edits (unlike reading from disk). Defaults to the file the user is editing. "
-      .. "Call this after get_cursor_position to widen the view around the cursor — to "
-      .. "pull in the enclosing function, imports, or nearby code.",
-    inputSchema = {
-      type = "object",
-      properties = {
-        file = { type = "string", description = "Absolute path; defaults to current file" },
-        start_line = { type = "integer", description = "1-based, inclusive" },
-        end_line = { type = "integer", description = "1-based, inclusive" },
-      },
-      required = { "start_line", "end_line" },
-    },
+    args = { file = true, start_line = true, end_line = true },
     handler = function(args)
-      local target = (args and args.file) or ctx().file
-      if not target then
-        return { error = "No file in context." }
+      if not is_pos_int(args.start_line) or not is_pos_int(args.end_line) then
+        return err("INVALID_ARGUMENT", "start_line and end_line must be positive integers.")
       end
-      local buf = vim.fn.bufnr(target)
-      if buf == -1 then
-        return { error = "File is not open in Neovim: " .. target }
+      if args.start_line > args.end_line then
+        return err("INVALID_ARGUMENT", "start_line must not exceed end_line.")
       end
-      local first = math.max(args.start_line, 1)
-      local lines = vim.api.nvim_buf_get_lines(buf, first - 1, args.end_line, false)
-      return { file = target, first_line = first, lines = lines }
-    end,
-  },
-  {
-    name = "get_current_selection",
-    description = "The user's active visual-mode handoff selection in Neovim: file, line range "
-      .. "(start_line/end_line) and column range (start_col/end_col, 1-based inclusive "
-      .. "byte columns; whole lines for linewise selections), the visual mode, and the "
-      .. "exact selected text. Call this when the user says 'this code', "
-      .. "'the selected/highlighted part', or refers to something without pasting it.",
-    inputSchema = { type = "object", properties = vim.empty_dict() },
-    handler = function()
-      return ctx().selection or { error = "No active visual selection handoff." }
-    end,
-  },
-  {
-    name = "get_open_buffers",
-    description = "All files currently open in Neovim (listed buffers).",
-    inputSchema = { type = "object", properties = vim.empty_dict() },
-    handler = function()
-      local out = {}
-      for _, buf in ipairs(vim.api.nvim_list_bufs()) do
-        if vim.bo[buf].buflisted and vim.api.nvim_buf_get_name(buf) ~= "" then
-          table.insert(out, {
-            file = vim.api.nvim_buf_get_name(buf),
-            modified = vim.bo[buf].modified,
-          })
-        end
+      local buf, e, target = resolve_buffer(args)
+      if not buf then
+        return e
       end
-      return { buffers = out }
+      local first = args.start_line
+      local capped = math.min(args.end_line, first + MAX_LINES - 1)
+      local lines = vim.api.nvim_buf_get_lines(buf, first - 1, capped, false)
+      local truncated = capped < args.end_line and vim.api.nvim_buf_line_count(buf) > capped
+      local result = {
+        kind = "buffer_range",
+        file = target,
+        first_line = first,
+        last_line = #lines > 0 and (first + #lines - 1) or vim.NIL,
+        lines = lines,
+        truncated = truncated,
+        next_start_line = truncated and (capped + 1) or vim.NIL,
+      }
+      return bound(result, "lines", function(r)
+        r.truncated = true
+        r.next_start_line = first + #r.lines
+        r.last_line = #r.lines > 0 and (first + #r.lines - 1) or vim.NIL
+      end)
     end,
   },
   {
     name = "get_diagnostics",
-    description = "Neovim diagnostics for the current file, or for the "
-      .. "file given in the optional 'file' argument.",
-    inputSchema = {
-      type = "object",
-      properties = { file = { type = "string", description = "Absolute file path" } },
-    },
+    args = { file = true, offset = true },
     handler = function(args)
-      local target = (args and args.file) or ctx().file
-      if not target then
-        return { error = "No file in context." }
+      local offset = args.offset or 0
+      if type(offset) ~= "number" or offset < 0 or offset % 1 ~= 0 then
+        return err("INVALID_ARGUMENT", "offset must be a non-negative integer.")
       end
-      local buf = vim.fn.bufnr(target)
-      if buf == -1 then
-        return { error = "File is not open in Neovim: " .. target }
+      local buf, e, target = resolve_buffer(args)
+      if not buf then
+        return e
       end
+      local all = vim.diagnostic.get(buf)
+      table.sort(all, function(a, b)
+        if a.lnum ~= b.lnum then
+          return a.lnum < b.lnum
+        end
+        return a.col < b.col
+      end)
       local out = {}
-      for _, d in ipairs(vim.diagnostic.get(buf)) do
+      for i = offset + 1, math.min(#all, offset + MAX_DIAGNOSTICS) do
+        local d = all[i]
         table.insert(out, {
           line = d.lnum + 1,
           col = d.col + 1,
@@ -127,63 +159,61 @@ M.tools = {
           source = d.source,
         })
       end
-      return { file = target, diagnostics = out }
+      local truncated = offset + #out < #all
+      local result = {
+        kind = "diagnostics",
+        file = target,
+        offset = offset,
+        diagnostics = out,
+        truncated = truncated,
+        next_offset = truncated and (offset + #out) or vim.NIL,
+      }
+      return bound(result, "diagnostics", function(r)
+        r.truncated = true
+        r.next_offset = offset + #r.diagnostics
+      end)
     end,
   },
   {
     name = "set_cursor_position",
-    description = "Move the user's cursor to a position in a file and bring it into view, "
-      .. "opening the file if it isn't already on screen (in any file — not just open buffers). "
-      .. "Use this when the user asks to be taken/moved/jumped to a place ('take me to the "
-      .. "parse_config definition', 'jump to the next failing test', 'go to where user_id is "
-      .. "assigned'), or after you've located something and the user accepts your offer to "
-      .. "navigate there. When the user only asks *where* something is, answer in text and "
-      .. "offer to jump rather than moving unprompted. Resolve the symbol/match to a concrete "
-      .. "line yourself (from buffer contents, diagnostics, or search) before calling. The "
-      .. "user's previous location stays on the jumplist, so the jump is cheap and reversible.",
-    inputSchema = {
-      type = "object",
-      properties = {
-        file = {
-          type = "string",
-          description = "Absolute path; defaults to the file the user is editing",
-        },
-        line = { type = "integer", description = "1-based line to move the cursor to" },
-        col = { type = "integer", description = "1-based column; defaults to 1" },
-      },
-      required = { "line" },
-    },
+    args = { file = true, line = true, col = true },
     handler = function(args)
-      return require("buoy.navigate").set_cursor_position(args or {})
+      if not is_pos_int(args.line) then
+        return err("INVALID_ARGUMENT", "line must be a positive integer.")
+      end
+      if args.col ~= nil and not is_pos_int(args.col) then
+        return err("INVALID_ARGUMENT", "col must be a positive integer.")
+      end
+      if args.file ~= nil and (type(args.file) ~= "string" or args.file:sub(1, 1) ~= "/") then
+        return err("INVALID_ARGUMENT", "file must be an absolute path.")
+      end
+      return require("buoy.navigate").set_cursor_position(args)
     end,
   },
 }
 
---- Schema list for MCP tools/list (handlers stripped).
-function M.list()
-  local out = {}
-  for _, t in ipairs(M.tools) do
-    table.insert(out, {
-      name = t.name,
-      description = t.description,
-      inputSchema = t.inputSchema,
-    })
-  end
-  return out
-end
-
---- Entry point invoked by the bridge.
+--- Dispatch one of the three editor operations requested by the agent CLI.
 function M.dispatch(name, args)
-  for _, t in ipairs(M.tools) do
+  for _, t in ipairs(operations) do
     if t.name == name then
+      if args == nil then
+        args = {}
+      elseif type(args) ~= "table" then
+        return err("INVALID_ARGUMENT", "Arguments must be an object.")
+      end
+      for key in pairs(args) do
+        if not t.args[key] then
+          return err("INVALID_ARGUMENT", "Unknown argument.")
+        end
+      end
       local ok, result = pcall(t.handler, args)
       if ok then
         return result
       end
-      return { error = "Tool failed: " .. tostring(result) }
+      return err("EDITOR_OPERATION_FAILED", "Editor operation failed.")
     end
   end
-  return { error = "Unknown tool: " .. tostring(name) }
+  return err("INVALID_OPERATION", "Unknown operation.")
 end
 
 return M
