@@ -67,6 +67,9 @@ local function start_term(argv)
     env = { NVIM_CONTEXT_SOCKET = plugin.socket }
   end
   vim.api.nvim_buf_call(state.buf, function()
+    -- launcher.resolve may run async; the buffer was locked while we waited so
+    -- stray keystrokes could not modify it and break termopen. Unlock now.
+    vim.bo[state.buf].modifiable = true
     vim.fn.termopen(argv, {
       env = env,
       on_exit = function()
@@ -80,6 +83,12 @@ local function start_term(argv)
       end,
     })
   end)
+  -- Only now is the buffer a terminal; entering insert earlier could have
+  -- modified the scratch buffer and failed termopen. Guard against the user
+  -- having moved focus during the async wait.
+  if vim.api.nvim_get_current_win() == state.win then
+    vim.cmd.startinsert()
+  end
 end
 
 local function start_job()
@@ -122,13 +131,19 @@ function M.open()
 
   if fresh then
     state.buf = vim.api.nvim_create_buf(false, false)
+    -- launcher.resolve may resolve asynchronously (Codex spawns app-server and
+    -- round-trips its config before start_term runs). Lock the scratch buffer so
+    -- keystrokes during that window cannot mark it modified and break termopen.
+    vim.bo[state.buf].modifiable = false
   end
 
   open_window()
 
   if fresh then
-    -- termopen must run with the target buffer current.
+    -- termopen must run with the target buffer current. start_term enters insert
+    -- mode itself once the terminal exists, so do not startinsert here.
     start_job()
+    return
   end
 
   vim.cmd.startinsert()

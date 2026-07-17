@@ -59,20 +59,42 @@ function M.hook_command()
   return headless_script_command("context_hook.lua")
 end
 
+-- Render a TOML basic string. vim.json.encode() is unusable here: on Neovim
+-- < 0.10 it escapes "/" as "\/", which is not a legal TOML escape, so Codex
+-- rejects the config value at startup. TOML basic strings permit only
+-- \b \t \n \f \r \" \\ \uXXXX \UXXXXXXXX, so escape backslash, double quote,
+-- and control bytes (0x00-0x1F and 0x7F) and leave everything else, including
+-- "/", verbatim.
+local function toml_basic_string(s)
+  local shorthand = {
+    ["\\"] = "\\\\",
+    ['"'] = '\\"',
+    ["\b"] = "\\b",
+    ["\t"] = "\\t",
+    ["\n"] = "\\n",
+    ["\f"] = "\\f",
+    ["\r"] = "\\r",
+  }
+  local escaped = s:gsub('[%z\1-\31\127"\\]', function(c)
+    return shorthand[c] or string.format("\\u%04x", c:byte())
+  end)
+  return '"' .. escaped .. '"'
+end
+
 function M.codex_argv(cmd, developer_instructions, hook_command)
   local argv = { cmd }
   if developer_instructions then
     vim.list_extend(argv, {
       "-c",
-      "developer_instructions=" .. vim.json.encode(developer_instructions),
+      "developer_instructions=" .. toml_basic_string(developer_instructions),
     })
   end
-  -- The structure is hand-written TOML (inline tables); vim.json.encode()
-  -- renders the command as a compatible TOML basic string.
+  -- The structure is hand-written TOML (inline tables); toml_basic_string()
+  -- renders the command as a valid TOML basic string on every Neovim version.
   vim.list_extend(argv, {
     "-c",
     'hooks.UserPromptSubmit=[{hooks=[{type="command",command='
-      .. vim.json.encode(hook_command)
+      .. toml_basic_string(hook_command)
       .. ",timeout=10}]}]",
   })
   return argv
