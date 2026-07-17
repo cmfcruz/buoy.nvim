@@ -62,7 +62,7 @@ local ok, err = xpcall(function()
     "Buoy guidance requests permission escalation before invoking the CLI"
   )
   truthy(
-    neovim_instructions:find("Do not inspect, print,", 1, true),
+    neovim_instructions:find("Never look up the socket path", 1, true),
     "Buoy guidance preserves authoritative socket routing"
   )
   eq(

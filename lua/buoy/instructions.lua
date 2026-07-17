@@ -35,20 +35,30 @@ attached to every user prompt. For additional live editor state, use this privat
 
 `%s`
 
-- `get_buffer_range --start-line N --end-line N [--file ABSOLUTE_PATH]`
-- `get_diagnostics [--file ABSOLUTE_PATH] [--offset N]`
-- `set_cursor_position --line N [--col N] [--file ABSOLUTE_PATH]`
+- `get_buffer_range --start-line N --end-line N [--file ABSOLUTE_PATH]` — read up to
+  500 lines from an open buffer
+- `get_diagnostics [--file ABSOLUTE_PATH] [--offset N]` — editor errors and warnings
+  for an open buffer, up to 200 per call; `--offset N` skips the first N
+- `set_cursor_position --line N [--col N] [--file ABSOLUTE_PATH]` — move the user's
+  cursor, opening the file first if it is not already open
 
-Use buffer reads for code outside the snapshot, including unsaved edits, and diagnostics
-for editor errors or warnings. Move the cursor only when the user explicitly asks for a
-jump and the destination is resolved; if they ask where something is, answer without
-moving.
+Lines and columns are 1-based. When `--file` is omitted, commands target the user's
+current file. Results are JSON; if a result has `"truncated": true`, repeat the call,
+passing `next_start_line` as `--start-line` or `next_offset` as `--offset`, to fetch
+the rest.
+
+Use `get_buffer_range` for files open in the editor, whose buffers may hold unsaved
+edits; read all other files from disk with your normal tools.
+
+Move the cursor only when the user explicitly asks for a jump and you have already
+determined the exact target line; if they ask where something is, answer without moving.
 
 The CLI connects through a session-local Neovim socket, so every invocation requires the
 agent's normal permission-escalation mechanism. Use that mechanism on the first attempt;
-do not try the command in a restricted shell sandbox first. Do not inspect, print,
-discover, or substitute another socket. If permission is denied or the command reports
-`RPC_FAILED`, report that live editor access is unavailable.]]):format(M.cli_prefix())
+do not try the command in a restricted shell sandbox first.
+Never look up the socket path or connect to any socket directly; reach the editor only
+through this CLI. If permission is denied or the command reports `RPC_FAILED`, report
+that live editor access is unavailable.]]):format(M.cli_prefix())
 end
 
 --- Shell command both agents register as the UserPromptSubmit hook. Kept
