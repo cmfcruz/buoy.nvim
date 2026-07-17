@@ -99,6 +99,7 @@ require("buoy").setup({
     toggle = "<S-F2>",        -- show/hide the agent window; set to false to disable
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
+  -- title = " My Agent ",    -- override the float border label (defaults to the agent's name)
   window = {
     style = "float",          -- "float" (default) | "vsplit"
     width = 0.4,              -- fraction of the editor width
@@ -130,7 +131,9 @@ require("buoy").setup({
   right-hand split. `window.width` is a fraction of the editor's width
   (default `0.4`). `window.border` applies to the float style only and accepts
   any border value from `:h nvim_open_win()` (`"rounded"`, `"single"`,
-  `"double"`, `"none"`, ...).
+  `"double"`, `"none"`, ...). The top-level `title` option overrides the
+  float's border label, which defaults to the active agent's name
+  (`" Claude Code "` or `" Codex "`).
 - Every key is optional; anything you omit keeps its default.
 
 ## Per-prompt context enrichment
