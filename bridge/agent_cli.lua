@@ -10,8 +10,6 @@
 local script_dir = arg[0]:match("^(.*)[/\\]") or "."
 local rpc = dofile(script_dir .. "/nvim_rpc.lua")
 
-local MAX_RESULT_BYTES = 24576
-
 -- Exit statuses: 0 success, 2 invalid operation/arguments, 3 missing socket
 -- or RPC failure, 4 editor rejection, encoding failure, or output limit,
 -- 70 unexpected internal failure.
@@ -92,11 +90,11 @@ if result.kind == "error" then
   die(result.code or "INTERNAL", result.message or "Internal failure.", operation)
 end
 
+-- The result size limit is enforced authoritatively in buoy.tools (which trims
+-- to fit or returns OUTPUT_LIMIT); the bridge cannot re-trim, only reject, so it
+-- trusts that enforcement and does not re-check the encoded byte length here.
 local encode_ok, encoded = pcall(vim.json.encode, result)
 if not encode_ok then
   die("ENCODING_ERROR", "Result could not be encoded as JSON.", operation)
-end
-if #encoded > MAX_RESULT_BYTES then
-  die("OUTPUT_LIMIT", "Result exceeds the output limit.", operation)
 end
 emit(encoded, 0)
