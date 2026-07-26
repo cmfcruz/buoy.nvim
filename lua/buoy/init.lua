@@ -1,5 +1,5 @@
 --- buoy.nvim
---- Floats on the surface, anchored to the code.
+--- Floats or docks — stays anchored to the code.
 --- An agent's official TUI (Codex / Claude Code) in a float or split, plus
 --- live editor context and navigation through a private agent CLI.
 
@@ -16,6 +16,7 @@ M.config = {
     style = "auto", -- "auto" | "vsplit" | "float"; auto splits when the code stays wider than width, else floats
     width = 80, -- fixed columns of text for the agent
     border = "rounded",
+    stay = false, -- keep the agent split open after all other windows close (default: quit with them)
   },
   keymaps = {
     -- Actions are layout-aware: the primary key does a vsplit's always-on action

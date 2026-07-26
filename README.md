@@ -3,40 +3,32 @@
 [![Release](https://img.shields.io/github/v/release/cmfcruz/buoy.nvim?label=release)](https://github.com/cmfcruz/buoy.nvim/releases)
 [![License](https://img.shields.io/github/license/cmfcruz/buoy.nvim)](LICENSE)
 ![Neovim](https://img.shields.io/badge/Neovim-0.11%2B-57A143?logo=neovim&logoColor=white)
+![Lua](https://img.shields.io/badge/Lua-5.1%2B-2C2D72?logo=lua&logoColor=white)
 
 <p align="center">
-  <img src="buoy.png" alt="buoy.nvim" width="400">
+  <img src="docs/buoy.png" alt="buoy.nvim" width="400">
 </p>
 
-> Floats on the surface, anchored to the code.
+> Floats or docks — stays anchored to the code.
 
-A floating window for your AI coding agent — the **official TUI** for Codex or
-Claude Code — plus **live editor context and navigation**: every prompt you
-submit automatically carries a focused snapshot of the current file, cursor
-position, visual selection, and open buffers, added by a prompt hook that
-reads your running Neovim. When it needs more, the agent can use buoy's private
-CLI to read targeted buffer ranges and diagnostics or move your cursor to a
-resolved location — the same experience as the VS Code integration, without
-maintaining any chat UI.
+A dedicated Neovim window for Claude Code or Codex, with live editor context on
+every prompt.
 
-The window **floats on the surface** of your editor; the live bridge keeps the
-agent **anchored to the code** — grounded in your live editor state instead of
-whatever you remember to paste.
+<p align="center">
+  <img src="docs/demo.gif" alt="buoy.nvim docked beside a Neovim buffer with an agent mid-turn" width="900">
+</p>
 
-```
-┌─ Neovim ──────────────────────┬─ Agent (official TUI) ─┐
-│  editing buffers              │  › what does this      │
-│  autocmds cache:              │    selection do?       │
-│   file / cursor / selection   │                        │
-│        ▲                      │  [context_hook enriches│
-│        │ msgpack-RPC          │   every prompt with the│
-│  ┌─────┴──────────────┐       │   private agent CLI    │
-│  │ context_hook /     │       │   widen context        │
-│  │ agent_cli          │◄──────┤   mid-turn]            │
-│  └────────────────────┘       │                        │
-│      (spawned by the agent)   │                        │
-└───────────────────────────────┴────────────────────────┘
-```
+- **The official agent TUI, docked in Neovim.** Run Claude Code or Codex in a
+  split or float that stays anchored beside your code — no chat UI to maintain.
+- **Context on every prompt.** A prompt hook automatically attaches the current
+  file, cursor, visual selection, and open buffers to what you send — no tool
+  call, no extra round trip.
+- **The agent reads back.** buoy's private CLI lets the agent pull targeted
+  buffer ranges and diagnostics, or move your cursor to a resolved location,
+  mid-turn.
+- **Layout that adapts.** Auto-picks a right-side split while there is room, a
+  floating overlay once the editor gets narrow, and follows editor resizes.
+  Either layout can be pinned explicitly.
 
 ## Requirements
 
@@ -67,7 +59,7 @@ git clone https://github.com/cmfcruz/buoy.nvim `
 ```
 
 Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
-floats over the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
+opens beside the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
 preferring Claude Code; no config file required.)
 
 On Windows, the terminal UI works normally, but buoy does not attach the POSIX
@@ -193,6 +185,21 @@ If the hook cannot reach your Neovim it prints nothing and never blocks the
 prompt.
 
 ## Live editor bridge
+
+```
+┌─ Neovim ──────────────────────┬─ Agent (official TUI) ─┐
+│  editing buffers              │  › what does this      │
+│  autocmds cache:              │    selection do?       │
+│   file / cursor / selection   │                        │
+│        ▲                      │  [context_hook enriches│
+│        │ msgpack-RPC          │   every prompt with the│
+│  ┌─────┴──────────────┐       │   private agent CLI    │
+│  │ context_hook /     │       │   widen context        │
+│  │ agent_cli          │◄──────┤   mid-turn]            │
+│  └────────────────────┘       │                        │
+│      (spawned by the agent)   │                        │
+└───────────────────────────────┴────────────────────────┘
+```
 
 On Linux and macOS, buoy gives the agent a compact command prefix for its
 private `bridge/agent_cli.lua` adapter. The agent invokes it through its normal
