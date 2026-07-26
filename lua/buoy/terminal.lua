@@ -377,6 +377,26 @@ function M.toggle()
   end
 end
 
+--- Layout-aware key actions. The primary key (F2 by default) does the layout's
+--- "always-on" action: focus in a vsplit, where the agent is always visible, or
+--- show/hide in a float, where it overlaps the code. The secondary key (S-F2)
+--- does the other. See current_layout() for how the layout is determined.
+function M.on_primary()
+  if current_layout() == "float" then
+    M.toggle()
+  else
+    M.focus_toggle()
+  end
+end
+
+function M.on_secondary()
+  if current_layout() == "float" then
+    M.focus_toggle()
+  else
+    M.toggle()
+  end
+end
+
 --- Rebuild the agent window in the resolved layout without disturbing its
 --- session: the terminal buffer outlives the window, so close the current
 --- window and reopen through open_window(), then restore whichever side (agent

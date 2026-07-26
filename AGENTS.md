@@ -60,11 +60,14 @@ regression.
 
 ## Interaction Semantics
 
-Preserve the interaction split: `<F2>` opens the agent or switches focus between it and the
-last editing window while keeping the agent visible. `<S-F2>` and `:BuoyToggle` show or
-hide the window without killing the terminal session. `:Buoy` opens or focuses the agent;
-it does not switch back to code. Keep ranged command invocation working so Visual-mode
-`:Buoy` and `:BuoyToggle` preserve the same selection handoff as their keymaps.
+Preserve the interaction split. The two keymaps are layout-aware: the primary key
+(`<F2>`, `keymaps.primary`) performs the layout's always-on action — focus-switch in a
+`vsplit`, show/hide in a `float` — and the secondary key (`<S-F2>`, `keymaps.secondary`)
+does the other. When the agent is closed, the layout it would open into decides, so either
+key opens it. Neither hiding nor focus-switching kills the terminal session. `:Buoy` opens
+or focuses the agent (it does not switch back to code) and `:BuoyToggle` shows or hides it,
+regardless of layout. Keep ranged command invocation working so Visual-mode `:Buoy` and
+`:BuoyToggle` preserve the same selection handoff as the keymaps.
 
 A debounced `VimResized` handler keeps an open agent in step with the editor size. Under
 `style = "auto"`, crossing the width boundary rebuilds into the other layout by closing and

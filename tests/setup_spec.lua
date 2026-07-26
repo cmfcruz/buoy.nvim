@@ -122,6 +122,30 @@ local ok, err = xpcall(function()
   truthy(pcall(buoy.setup, { window = { width = 40 } }), "a valid width completes setup")
   eq(40, buoy.config.window.width, "the valid width is applied")
 
+  -- setup() installs the configured agent keymaps, and `false` installs none.
+  -- Mappings outlive a fresh_buoy(), so clear them before each check.
+  local function unmap(lhs)
+    pcall(vim.keymap.del, { "n", "x", "t" }, lhs)
+  end
+  local function mapping(lhs)
+    return vim.fn.maparg(lhs, "n", false, true)
+  end
+
+  unmap("<F2>")
+  unmap("<S-F2>")
+  buoy = fresh_buoy()
+  buoy.setup({ agent = "codex" })
+  truthy(not vim.tbl_isempty(mapping("<F2>")), "setup installs the primary keymap")
+  truthy(not vim.tbl_isempty(mapping("<S-F2>")), "setup installs the secondary keymap")
+
+  unmap("<F2>")
+  unmap("<S-F2>")
+  buoy = fresh_buoy()
+  buoy.setup({ agent = "codex", keymaps = { primary = false, secondary = "<F9>" } })
+  truthy(vim.tbl_isempty(mapping("<F2>")), "a false primary installs no mapping")
+  truthy(not vim.tbl_isempty(mapping("<F9>")), "a custom secondary key is installed")
+  unmap("<F9>")
+
   vim.notify = original_notify
   vim.fn.executable = original_executable
   vim.fn.serverstart = original_serverstart

@@ -18,8 +18,10 @@ M.config = {
     border = "rounded",
   },
   keymaps = {
-    toggle = "<S-F2>", -- show/hide the agent window; set to false to disable
-    focus = "<F2>", -- switch focus terminal <-> last window; set to false to disable
+    -- Actions are layout-aware: the primary key does a vsplit's always-on action
+    -- (focus) or a float's (show/hide); the secondary key does the other.
+    primary = "<F2>", -- focus in a vsplit, show/hide in a float; false to disable
+    secondary = "<S-F2>", -- show/hide in a vsplit, focus in a float; false to disable
   },
   -- Gated agent-facing surfaces; keys and defaults live in buoy.capabilities so
   -- no module re-declares them (see that file for per-key descriptions).
@@ -222,16 +224,16 @@ function M.setup(opts)
   ensure_context_window_inoculated()
   require("buoy.context").setup()
 
-  if config.keymaps.toggle then
-    vim.keymap.set({ "n", "x", "t" }, config.keymaps.toggle, function()
-      require("buoy.terminal").toggle()
-    end, { desc = "buoy: toggle", silent = true })
+  if config.keymaps.primary then
+    vim.keymap.set({ "n", "x", "t" }, config.keymaps.primary, function()
+      require("buoy.terminal").on_primary()
+    end, { desc = "buoy: agent primary (focus in split, show/hide in float)", silent = true })
   end
 
-  if config.keymaps.focus then
-    vim.keymap.set({ "n", "x", "t" }, config.keymaps.focus, function()
-      require("buoy.terminal").focus_toggle()
-    end, { desc = "buoy: focus switch", silent = true })
+  if config.keymaps.secondary then
+    vim.keymap.set({ "n", "x", "t" }, config.keymaps.secondary, function()
+      require("buoy.terminal").on_secondary()
+    end, { desc = "buoy: agent secondary (show/hide in split, focus in float)", silent = true })
   end
 
   -- Keep the agent window's layout in step with the editor size: an "auto"

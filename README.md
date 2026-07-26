@@ -95,8 +95,8 @@ default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
 require("buoy").setup({
   agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex"
   keymaps = {
-    focus = "<F2>",           -- open/switch focus terminal <-> last window; set to false to disable
-    toggle = "<S-F2>",        -- show/hide the agent window; set to false to disable
+    primary = "<F2>",         -- focus in a vsplit, show/hide in a float; false to disable
+    secondary = "<S-F2>",     -- show/hide in a vsplit, focus in a float; false to disable
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
   window = {
@@ -123,14 +123,22 @@ require("buoy").setup({
   wins, and later calls only warn. Call `setup()` during startup rather than
   from a deferred hook, edit + restart Neovim to change the configuration,
   and use `BUOY_AGENT` for a one-off agent switch.
-- **Switch focus without hiding:** `<F2>` (`keymaps.focus`) opens the agent
-  window, or — when it's already open — moves the cursor between the terminal
-  and your last window, so you can scroll code while the agent's output stays
-  visible.
-- **Show/hide:** `<S-F2>` (`keymaps.toggle`) hides the window entirely (the
-  agent session survives). If your terminal emulator doesn't deliver `<S-F2>`,
-  set `keymaps.toggle` to another key. Either mapping can also be `false`;
-  `:BuoyToggle` shows or hides the window, while `:Buoy` opens or focuses it.
+- **Layout-aware keys:** the two mappings are named by role — `primary` and
+  `secondary` — rather than by action, because the action each performs depends
+  on the agent's layout. The primary key is always the one you reach for: in a
+  `vsplit` the agent is always visible, so it just moves focus; in a `float` it
+  overlaps your code, so it shows/hides the window instead. The secondary key
+  does the other. When the agent is closed, the layout it *would* open into
+  decides.
+  - **Primary — `<F2>` (`keymaps.primary`):** focus-switch between the terminal
+    and your last window in a `vsplit`; show/hide the window in a `float`. Opens
+    the agent when it's closed.
+  - **Secondary — `<S-F2>` (`keymaps.secondary`):** the other action — show/hide
+    in a `vsplit`, focus-switch in a `float`.
+  Hiding never kills the agent session. If your terminal emulator doesn't
+  deliver `<S-F2>`, set `keymaps.secondary` to another key; either mapping can
+  also be `false`. `:BuoyToggle` shows or hides the window, while `:Buoy` opens
+  or focuses it.
 - **Window layout:** `"auto"` (default) chooses a right-side `vsplit` while
   every code window would stay wider than `window.width`, otherwise a `float`
   overlay so your code is never squeezed below the agent's own width. The
@@ -211,13 +219,15 @@ resolution.
 
 ## Usage
 
-1. `<F2>` opens the window, or switches focus between the agent and your code
-   when it's already open. `:Buoy` always opens or focuses the agent.
-   `<S-F2>` (or `:BuoyToggle`) shows or hides the window; the agent session
-   survives hiding it.
-2. Edit normally, select code in visual mode, then press `<F2>` or run `:Buoy`
-   directly from the selection. Both paths preserve the handoff selection, so
-   the next prompt automatically carries its range and text.
+1. `<F2>` opens the window. Once it's open the keys are layout-aware: in a
+   `vsplit`, `<F2>` switches focus between the agent and your code while `<S-F2>`
+   shows/hides the window; in a `float` those swap, so `<F2>` shows/hides and
+   `<S-F2>` switches focus. `:Buoy` always opens or focuses the agent and
+   `:BuoyToggle` always shows or hides it; the agent session survives hiding.
+2. Edit normally, select code in visual mode, then bring up the agent from the
+   selection with `:Buoy` (or the focus key for your layout). Both preserve the
+   handoff selection, so the next prompt automatically carries its range and
+   text.
 
 ## Limitations / roadmap
 

@@ -83,7 +83,7 @@ local ok, err = xpcall(function()
       agent = "codex",
       cmd = vim.o.shell,
       title = " Test ",
-      window = { style = "float", width = 0.4, border = "rounded" },
+      window = { style = "float", width = 80, border = "rounded" },
     },
     socket = "/tmp/buoy-startup-spec.sock",
     ensure_setup = function() end,
