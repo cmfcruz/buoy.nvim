@@ -129,6 +129,95 @@ local ok, err = xpcall(function()
     settings.hooks.UserPromptSubmit,
     "Claude registers the context hook for every prompt"
   )
+
+  -- Capability switches drop disabled surfaces from the guidance. Navigation is
+  -- always advertised.
+  local no_buffers = instructions.neovim_instructions({ expose_buffers = false })
+  truthy(
+    not no_buffers:find("get_buffer_range --start-line", 1, true),
+    "disabling expose_buffers omits the buffer-read command"
+  )
+  truthy(
+    no_buffers:find("get_diagnostics %[%-%-file ABSOLUTE_PATH%]"),
+    "disabling expose_buffers keeps diagnostics"
+  )
+  truthy(
+    no_buffers:find("set_cursor_position %-%-line N", 1, false),
+    "disabling expose_buffers keeps navigation"
+  )
+  truthy(
+    not no_buffers:find("next_start_line", 1, true),
+    "disabling expose_buffers drops its truncation-continuation arg"
+  )
+  truthy(
+    no_buffers:find("next_offset", 1, true),
+    "disabling expose_buffers keeps the diagnostics continuation arg"
+  )
+  local no_diagnostics = instructions.neovim_instructions({ expose_diagnostics = false })
+  truthy(
+    not no_diagnostics:find("next_offset", 1, true),
+    "disabling expose_diagnostics drops its truncation-continuation arg"
+  )
+  truthy(
+    no_diagnostics:find("next_start_line", 1, true),
+    "disabling expose_diagnostics keeps the buffer continuation arg"
+  )
+  local no_context = instructions.neovim_instructions({ expose_editor_context = false })
+  truthy(
+    not no_context:find("attached to every user prompt", 1, true),
+    "disabling expose_editor_context drops the per-prompt snapshot line"
+  )
+  local navigation_only = instructions.neovim_instructions({
+    expose_buffers = false,
+    expose_diagnostics = false,
+    expose_editor_context = false,
+  })
+  truthy(
+    navigation_only:find("Lines and columns are 1-based", 1, true),
+    "navigation-only guidance keeps the 1-based coordinate contract"
+  )
+  truthy(
+    navigation_only:find(
+      "When `--file` is omitted, commands target the user's\ncurrent file",
+      1,
+      true
+    ),
+    "navigation-only guidance keeps the current-file default"
+  )
+  truthy(
+    navigation_only:find("Results are JSON", 1, true),
+    "navigation-only guidance keeps the result format"
+  )
+  truthy(
+    navigation_only:find("set_cursor_position --line N", 1, true),
+    "navigation-only guidance still advertises cursor navigation"
+  )
+  truthy(
+    not navigation_only:find("truncated", 1, true),
+    "navigation-only guidance omits the read-command truncation sentence"
+  )
+  truthy(
+    not navigation_only:find("next_start_line", 1, true),
+    "navigation-only guidance omits the buffer continuation argument"
+  )
+  truthy(
+    not navigation_only:find("next_offset", 1, true),
+    "navigation-only guidance omits the diagnostics continuation argument"
+  )
+
+  -- A nil hook_command omits the UserPromptSubmit hook from both argv builders.
+  local claude_no_hook = instructions.claude_argv("claude-custom", neovim_instructions, nil)
+  truthy(
+    not vim.list_contains(claude_no_hook, "--settings"),
+    "Claude omits --settings when the hook is disabled"
+  )
+  local codex_no_hook = instructions.codex_argv("codex-custom", consolidated, nil)
+  for _, entry in ipairs(codex_no_hook) do
+    truthy(
+      type(entry) ~= "string" or not entry:find("hooks.UserPromptSubmit", 1, true),
+      "Codex omits the UserPromptSubmit hook when disabled"
+    )
+  end
 end, debug.traceback)
 
 if not ok then

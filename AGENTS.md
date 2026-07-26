@@ -5,7 +5,8 @@
 `buoy.nvim` is a Lua plugin for Neovim 0.11+. Runtime modules live in `lua/buoy/`: `init.lua`
 owns one-shot setup, socket publication, and default keymaps; `terminal.lua` owns the agent
 window and terminal job; `context.lua` caches editor state and visual handoffs; `tools.lua`
-and `navigate.lua` implement live reads and cursor navigation. `launcher.lua`,
+and `navigate.lua` implement live reads and cursor navigation; `capabilities.lua` is the
+single source of truth for the `context` capability switches. `launcher.lua`,
 `instructions.lua`, `codex.lua`, and `codex_protocol.lua` build agent-specific launch
 arguments and preserve Codex's effective instructions: `codex.lua` spawns the
 `codex app-server` transport and `codex_protocol.lua` runs the JSON-RPC handshake that reads

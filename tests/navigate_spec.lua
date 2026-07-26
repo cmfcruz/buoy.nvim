@@ -54,6 +54,10 @@ local ok, err = xpcall(function()
   local moved = tools.dispatch("set_cursor_position", { line = 3, col = 2 })
   eq(first_file, moved.file, "cursor navigation defaults to the context file")
   eq({ 3, 1 }, vim.api.nvim_win_get_cursor(0), "cursor navigation remains 1-based")
+  -- The agent reads the destination back out of the result, so the reported
+  -- position must be 1-based too, not the 0-based column the API took.
+  eq(3, moved.line, "the result reports the 1-based destination line")
+  eq(2, moved.col, "the result reports the 1-based destination column")
 
   -- A larger loaded buffer is the target for window and jumplist checks.
   local big_file = temp .. "/big.lua"

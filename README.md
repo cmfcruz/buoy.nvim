@@ -70,7 +70,7 @@ Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
 floats over the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
 preferring Claude Code; no config file required.)
 
-On Windows, the terminal UI works normally, but v2 does not attach the POSIX
+On Windows, the terminal UI works normally, but buoy does not attach the POSIX
 prompt hook or live editor CLI. Buoy warns once when the agent starts.
 
 To update buoy later, pull the clone:
@@ -100,6 +100,11 @@ require("buoy").setup({
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
   window = { style = "float", width = 0.4, border = "rounded" },
+  context = {
+    expose_buffers = true,        -- let the agent read live buffer contents (get_buffer_range)
+    expose_diagnostics = true,    -- let the agent read buffer diagnostics (get_diagnostics)
+    expose_editor_context = true, -- attach the per-prompt editor snapshot + selection handoff
+  },
 })
 ```
 
@@ -121,6 +126,16 @@ require("buoy").setup({
   agent session survives). If your terminal emulator doesn't deliver `<S-F2>`,
   set `keymaps.toggle` to another key. Either mapping can also be `false`;
   `:BuoyToggle` shows or hides the window, while `:Buoy` opens or focuses it.
+- **Limit what the agent sees:** the `context` switches gate buoy's
+  agent-facing surfaces, all enabled by default. Set `expose_buffers = false` to
+  disable `get_buffer_range` (live buffer contents), `expose_diagnostics = false`
+  to disable `get_diagnostics`, and `expose_editor_context = false` to drop the
+  per-prompt editor snapshot and the visual-selection handoff. A disabled
+  capability is both omitted from the agent's instructions and refused if called.
+  Turn all three off to run buoy as a plain window switcher between the agent and
+  your editor. This is a capability/privacy control, not a security boundary — a
+  hosted agent can still read files through its own tools. Cursor navigation
+  (`set_cursor_position`) is always available; it exposes nothing.
 - Every key is optional; anything you omit keeps its default.
 
 ## Per-prompt context enrichment
@@ -180,8 +195,7 @@ resolution.
 - On Linux and macOS, editor context refreshes when you submit a prompt and
   when the agent invokes the private CLI; buoy does not stream
   selection-changed events continuously.
-- Windows supports the terminal UI but not the prompt hook or live editor CLI
-  in v2.
+- Windows supports the terminal UI but not the prompt hook or live editor CLI.
 - `open_diff` / in-editor approval is intentionally out of scope: the
   official TUI already renders diffs and approvals, which is the point.
 

@@ -21,6 +21,9 @@ M.config = {
     toggle = "<S-F2>", -- show/hide the agent window; set to false to disable
     focus = "<F2>", -- switch focus terminal <-> last window; set to false to disable
   },
+  -- Gated agent-facing surfaces; keys and defaults live in buoy.capabilities so
+  -- no module re-declares them (see that file for per-key descriptions).
+  context = vim.deepcopy(require("buoy.capabilities").defaults),
 }
 
 -- Built-in agent presets. `cmd` is the CLI launched in the agent window;
