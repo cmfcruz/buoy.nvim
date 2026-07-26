@@ -13,9 +13,7 @@ local M = {}
 
 local ns = vim.api.nvim_create_namespace("buoy_flash")
 
-local function err(code, message)
-  return { kind = "error", code = code, message = message }
-end
+local err = require("buoy.error")
 
 --- A "real" editing window: a non-floating window showing a normal buffer.
 --- Excludes the agent float, terminals, help, quickfix, etc.

@@ -17,9 +17,7 @@ local function config()
   return require("buoy").config
 end
 
-local function err(code, message)
-  return { kind = "error", code = code, message = message }
-end
+local err = require("buoy.error")
 local capabilities = require("buoy.capabilities")
 
 local function is_pos_int(value)
