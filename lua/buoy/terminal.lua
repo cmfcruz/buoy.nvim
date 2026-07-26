@@ -34,7 +34,9 @@ end
 local function open_window()
   local plugin = require("buoy")
   local cfg = plugin.config.window
-  local width = math.floor(vim.o.columns * cfg.width)
+  -- cfg.width is a fixed count of text columns for the agent TUI. Clamp so the
+  -- window (plus a floating border) still fits inside a narrow editor.
+  local width = math.max(1, math.min(cfg.width, vim.o.columns - 2))
 
   if cfg.style == "vsplit" then
     vim.cmd("botright vsplit")
@@ -57,6 +59,13 @@ local function open_window()
   end
 
   vim.wo[state.win].winhighlight = "Normal:Normal,FloatBorder:FloatBorder"
+  -- Strip gutters so the terminal's text area equals the window width, giving
+  -- the agent the full cfg.width columns. The float already does this via
+  -- style = "minimal"; a vsplit inherits global 'number'/'signcolumn'/etc.
+  vim.wo[state.win].number = false
+  vim.wo[state.win].relativenumber = false
+  vim.wo[state.win].signcolumn = "no"
+  vim.wo[state.win].foldcolumn = "0"
   install_close_cleanup(state.win)
 end
 

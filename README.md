@@ -99,7 +99,11 @@ require("buoy").setup({
     toggle = "<S-F2>",        -- show/hide the agent window; set to false to disable
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
-  window = { style = "float", width = 0.4, border = "rounded" },
+  window = {
+    style = "float",          -- "float" | "vsplit"
+    width = 80,               -- fixed columns of text for the agent (integer, minimum 40)
+    border = "rounded",       -- used by the floating window
+  },
   context = {
     expose_buffers = true,        -- let the agent read live buffer contents (get_buffer_range)
     expose_diagnostics = true,    -- let the agent read buffer diagnostics (get_diagnostics)

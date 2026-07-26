@@ -14,7 +14,7 @@ M.config = {
   cmd = nil, -- override the agent's default binary (optional)
   window = {
     style = "float", -- "float" | "vsplit"
-    width = 0.40, -- fraction of editor width
+    width = 80, -- fixed columns of text for the agent
     border = "rounded",
   },
   keymaps = {
@@ -181,6 +181,18 @@ function M.setup(opts)
   end
 
   local config = vim.tbl_deep_extend("force", M.config, opts or {})
+
+  -- window.width is a fixed column count: require a whole number, and reject
+  -- anything below this floor, where the agent window renders as an unusable
+  -- sliver.
+  local width = config.window.width
+  if type(width) ~= "number" or width % 1 ~= 0 or width < 40 then
+    error(
+      ("buoy: window.width %s is invalid (expected an integer of at least 40 columns)"):format(
+        vim.inspect(width)
+      )
+    )
+  end
 
   -- $BUOY_AGENT overrides the configured agent (e.g. BUOY_AGENT=codex nvim).
   local env_agent = vim.env.BUOY_AGENT

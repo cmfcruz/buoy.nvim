@@ -56,11 +56,11 @@ local ok, err = xpcall(function()
 
   -- The first setup applies a partial configuration over the defaults.
   local buoy = fresh_buoy()
-  buoy.setup({ agent = "codex", window = { width = 0.5 } })
+  buoy.setup({ agent = "codex", window = { width = 100 } })
   eq("codex", buoy.config.agent, "explicit agent is applied")
   eq("codex", buoy.config.cmd, "cmd derives from the selected preset")
   eq(" Codex ", buoy.config.title, "title derives from the selected preset")
-  eq(0.5, buoy.config.window.width, "partial window options apply over defaults")
+  eq(100, buoy.config.window.width, "partial window options apply over defaults")
   eq("rounded", buoy.config.window.border, "unspecified options keep their defaults")
 
   -- Later setup calls cannot change a running Neovim session.
@@ -106,6 +106,21 @@ local ok, err = xpcall(function()
   buoy.ensure_setup()
   truthy(buoy._did_setup, "automatic startup applies after a rejected config")
   eq("claude", buoy.config.agent, "automatic startup resolves the deterministic fallback")
+
+  -- window.width is a fixed column count: it must be a whole number of at least
+  -- 40, so a too-small integer and a non-integer both fail while a valid integer
+  -- width completes setup.
+  buoy = fresh_buoy()
+  truthy(not pcall(buoy.setup, { window = { width = 10 } }), "width below 40 is rejected")
+  truthy(not buoy._did_setup, "a rejected width leaves setup unlocked")
+
+  buoy = fresh_buoy()
+  truthy(not pcall(buoy.setup, { window = { width = 0.4 } }), "a non-integer width is rejected")
+  truthy(not buoy._did_setup, "a rejected non-integer width leaves setup unlocked")
+
+  buoy = fresh_buoy()
+  truthy(pcall(buoy.setup, { window = { width = 40 } }), "a valid width completes setup")
+  eq(40, buoy.config.window.width, "the valid width is applied")
 
   vim.notify = original_notify
   vim.fn.executable = original_executable
