@@ -1,2 +1,4 @@
 tmp/
 nvim.log
+_site/
+.jekyll-cache/
