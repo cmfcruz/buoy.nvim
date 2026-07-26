@@ -97,6 +97,24 @@ local ok, err = xpcall(function()
     #vim.api.nvim_buf_get_extmarks(term_buf, ns, 0, -1, {}),
     "no selection highlight leaks into the terminal buffer"
   )
+
+  -- A charwise handoff highlights exact columns through getregionpos(), a
+  -- different path from the whole-line linewise highlight above.
+  terminal.focus_toggle()
+  eq(source_buf, vim.api.nvim_get_current_buf(), "focus_toggle returns to the editor")
+  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("gg0vll", true, false, true), "nx", false)
+  eq("v", vim.fn.mode(), "precondition: editor is in charwise visual mode")
+  terminal.focus_toggle()
+
+  local charwise = require("buoy.context").state.selection
+  eq(1, charwise.start_col, "charwise handoff keeps the start column")
+  eq(3, charwise.end_col, "charwise handoff keeps the end column")
+
+  local marks = vim.api.nvim_buf_get_extmarks(source_buf, ns, 0, -1, { details = true })
+  eq(1, #marks, "a charwise handoff paints one exact-column highlight")
+  eq(0, marks[1][2], "the charwise highlight starts on the selected row")
+  eq(0, marks[1][3], "the charwise highlight starts at the selected column")
+  eq(3, marks[1][4].end_col, "the charwise highlight ends at the exclusive end column")
 end, debug.traceback)
 
 vim.fn.delete(temp, "rf")

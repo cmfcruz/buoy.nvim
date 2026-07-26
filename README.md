@@ -2,7 +2,7 @@
 
 [![Release](https://img.shields.io/github/v/release/cmfcruz/buoy.nvim?label=release)](https://github.com/cmfcruz/buoy.nvim/releases)
 [![License](https://img.shields.io/github/license/cmfcruz/buoy.nvim)](LICENSE)
-![Neovim](https://img.shields.io/badge/Neovim-0.9%2B-57A143?logo=neovim&logoColor=white)
+![Neovim](https://img.shields.io/badge/Neovim-0.11%2B-57A143?logo=neovim&logoColor=white)
 
 <p align="center">
   <img src="buoy.png" alt="buoy.nvim" width="400">
@@ -40,7 +40,7 @@ whatever you remember to paste.
 
 ## Requirements
 
-- Neovim 0.9+ (0.10+ recommended for exact charwise selections)
+- Neovim 0.11+ (required for exact visual-selection capture)
 - The Codex and/or Claude Code CLI on your `$PATH`
 
 ## Install
@@ -164,18 +164,6 @@ preserves the instructions Codex would normally load instead of replacing them
 with incomplete context. The prompt hook remains active, but on-demand live
 operations are unavailable for that session; buoy does not retry configuration
 resolution.
-
-## Upgrading to v2
-
-Buoy v2 no longer configures an MCP server. On Linux and macOS, live editor
-operations use buoy's private, session-scoped agent CLI while automatic
-per-prompt context remains unchanged. The agent's normal shell policy must
-allow the local command. Windows keeps the terminal UI but does not receive
-live editor context in v2.
-
-The undocumented `CODEX_NVIM_SOCKET` alias was removed. Restart Neovim after
-updating buoy so the running Lua modules and launch instructions match v2.
-Users who require the old MCP integration can remain on the final v1 release.
 
 ## Usage
 

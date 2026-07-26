@@ -3,6 +3,10 @@
 --- An agent's official TUI (Codex / Claude Code) in a float or split, plus
 --- live editor context and navigation through a private agent CLI.
 
+if vim.fn.has("nvim-0.11") == 0 then
+  error("buoy.nvim requires Neovim 0.11 or newer")
+end
+
 local M = {}
 
 M.config = {

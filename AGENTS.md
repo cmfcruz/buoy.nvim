@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 
-`buoy.nvim` is a Lua plugin for Neovim 0.9+. Runtime modules live in `lua/buoy/`: `init.lua`
+`buoy.nvim` is a Lua plugin for Neovim 0.11+. Runtime modules live in `lua/buoy/`: `init.lua`
 owns one-shot setup, socket publication, and default keymaps; `terminal.lua` owns the agent
 window and terminal job; `context.lua` caches editor state and visual handoffs; `tools.lua`
 and `navigate.lua` implement live reads and cursor navigation. `launcher.lua`,
@@ -39,7 +39,7 @@ setup run, then use `:Buoy`, `:BuoyToggle`, `<F2>`, or `<S-F2>`.
 Follow `.stylua.toml`: two-space indentation, Unix line endings, double quotes where
 practical, and a 100-column limit. Use `snake_case` for local functions and module fields,
 uppercase names for constants, and `M` for exported module tables. Prefer Neovim APIs over
-shell commands. Document public behavior with concise LuaDoc and preserve Neovim 0.9
+shell commands. Document public behavior with concise LuaDoc and preserve Neovim 0.11
 compatibility unless a change explicitly raises the minimum version.
 
 ## Testing Guidelines
@@ -48,7 +48,7 @@ Tests are self-contained Lua scripts rather than an external framework. Add focu
 assertions to `tests/*_spec.lua`, with failure labels that state the expected behavior.
 Cover successful interactions plus null and invalid-input paths. There is no numeric
 coverage target, but every behavior change should include a regression test. CI runs the
-full suite on Ubuntu with Neovim 0.9.5, stable, and nightly; nightly is allowed to fail.
+full suite on Ubuntu with Neovim 0.11.0, stable, and nightly; nightly is allowed to fail.
 
 Keep PTY coverage deterministic with `nvim_open_term()` rather than timing real terminal
 output. `tests/agent_cli_spec.lua` and `tests/hook_spec.lua` open real local RPC servers, so

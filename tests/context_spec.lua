@@ -67,7 +67,7 @@ local ok, err = xpcall(function()
     start_col = 3,
     end_col = 8,
     mode = "v",
-    text = vim.fn.has("nvim-0.10") == 1 and "saved " or "unsaved line 7",
+    text = "saved ",
   }, context.state.selection, "command range preserves the exact visual handoff")
 
   local tools = require("buoy.tools")

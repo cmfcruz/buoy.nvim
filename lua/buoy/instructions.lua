@@ -69,9 +69,9 @@ function M.hook_command()
   return headless_script_command("context_hook.lua")
 end
 
--- Render a TOML basic string. vim.json.encode() is unusable here: on Neovim
--- < 0.10 it escapes "/" as "\/", which is not a legal TOML escape, so Codex
--- rejects the config value at startup. TOML basic strings permit only
+-- Render a TOML basic string. vim.json.encode() is the wrong boundary here:
+-- Codex parses the value as TOML, whose valid escapes are narrower than JSON's.
+-- TOML basic strings permit only
 -- \b \t \n \f \r \" \\ \uXXXX \UXXXXXXXX, so escape backslash, double quote,
 -- and control bytes (0x00-0x1F and 0x7F) and leave everything else, including
 -- "/", verbatim.

@@ -23,6 +23,21 @@ local function fresh_buoy()
 end
 
 local ok, err = xpcall(function()
+  local original_has = vim.fn.has
+  vim.fn.has = function(feature)
+    if feature == "nvim-0.11" then
+      return 0
+    end
+    return original_has(feature)
+  end
+  local version_ok, version_err = pcall(fresh_buoy)
+  vim.fn.has = original_has
+  truthy(not version_ok, "Neovim older than 0.11 is rejected")
+  truthy(
+    tostring(version_err):find("requires Neovim 0.11 or newer", 1, true),
+    "the minimum-version error is actionable"
+  )
+
   local original_serverstart = vim.fn.serverstart
   vim.fn.serverstart = function()
     return "/tmp/buoy-setup-spec.sock"
