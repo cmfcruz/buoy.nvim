@@ -100,9 +100,10 @@ require("buoy").setup({
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
   window = {
-    style = "float",          -- "float" | "vsplit"
+    style = "auto",           -- "auto" (default) | "vsplit" | "float"
     width = 80,               -- fixed columns of text for the agent (integer, minimum 40)
     border = "rounded",       -- used by the floating window
+    stay = false,             -- keep the agent split open after all other windows close
   },
   context = {
     expose_buffers = true,        -- let the agent read live buffer contents (get_buffer_range)
@@ -130,6 +131,30 @@ require("buoy").setup({
   agent session survives). If your terminal emulator doesn't deliver `<S-F2>`,
   set `keymaps.toggle` to another key. Either mapping can also be `false`;
   `:BuoyToggle` shows or hides the window, while `:Buoy` opens or focuses it.
+- **Window layout:** `"auto"` (default) chooses a right-side `vsplit` while
+  every code window would stay wider than `window.width`, otherwise a `float`
+  overlay so your code is never squeezed below the agent's own width. The
+  decision reads the actual window layout, not just the editor width: a tab
+  already divided into columns floats where a tab holding one full-width buffer
+  splits, and horizontal splits still get a `vsplit` because they keep their
+  full width. Set `window.style` to `"vsplit"` or `"float"` to pin one.
+  `window.width` is a fixed column count applied to both layouts (clamped to fit
+  a narrow editor); it must be an integer of at least 40, and `setup()` raises a
+  configuration error otherwise. `window.border` applies only to the floating
+  window. While the agent is open, resizing the editor keeps it in step: an
+  `"auto"` window flips between split and float as it crosses the width boundary
+  — reusing the running agent session — and a float stays anchored to the
+  resized editor. The split holds its column count against `<C-w>=` and new
+  splits (it sets `winfixwidth`), and rearranging your own windows never
+  relayouts the agent; the layout is chosen when it opens and re-evaluated when
+  the editor resizes.
+- **Close with the last window:** by default buoy quits the agent split once it
+  is the last ordinary window in its tabpage — on the final tab, that quits
+  Neovim, mirroring file-tree plugins like neo-tree, so a `vsplit` agent window
+  never lingers after you close your other windows. Set `window.stay = true` to
+  keep it open instead; if you then hide an agent that has outlived every other
+  window, buoy restores an ordinary window beside it first, so hiding always
+  hides. Floats are unaffected (they never strand an ordinary window).
 - **Limit what the agent sees:** the `context` switches gate buoy's
   agent-facing surfaces, all enabled by default. Set `expose_buffers = false` to
   disable `get_buffer_range` (live buffer contents), `expose_diagnostics = false`

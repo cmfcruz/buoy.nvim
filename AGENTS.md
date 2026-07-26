@@ -66,6 +66,28 @@ hide the window without killing the terminal session. `:Buoy` opens or focuses t
 it does not switch back to code. Keep ranged command invocation working so Visual-mode
 `:Buoy` and `:BuoyToggle` preserve the same selection handoff as their keymaps.
 
+A debounced `VimResized` handler keeps an open agent in step with the editor size. Under
+`style = "auto"`, crossing the width boundary rebuilds into the other layout by closing and
+reopening the window around the same terminal buffer; a same-layout resize refreshes
+geometry in place (repositions a float, re-asserts a vsplit's width). This relies on the
+session living in the buffer, not the window — preserve that invariant when changing the
+open, hide, or rebuild paths, and keep the rebuild focus-preserving and confined to the
+agent's tabpage. A rebuild also reselects an active Visual selection with `gv`; window
+changes end Visual mode, so any new teardown path has to restore it. Because relayout only
+acts on the agent's own tabpage, a resize that happens while another tab is active is a
+no-op there; a `TabEnter` handler performs the missed relayout when the agent's tab regains
+focus. Keep both entry points in step.
+
+`style = "auto"` resolves against the real window layout, not `vim.o.columns` alone: it takes
+the layout's shape from the current windows and its size from `columns`, so a tab already
+divided into columns floats instead of squeezing every code window below `window.width`.
+Keep that resolver ratio-based — an absolute-width reading is untestable headlessly, where
+setting `vim.o.columns` updates the option a tick before the windows follow. The split sets
+`winfixwidth` to hold its fixed column count, and the user's own window commands
+deliberately do not trigger a relayout. Hiding always hides: when the agent split is the last
+ordinary window in its tabpage (reachable under `window.stay`), `hide()` restores an ordinary
+window before closing rather than surfacing `E444`.
+
 Configuration is applied once per Neovim session. Explicit `setup()` during startup wins
 over scheduled zero-config setup, later calls warn, and `BUOY_AGENT` is the supported
 per-session agent override. Preserve the visual-selection handoff and cleanup lifecycle

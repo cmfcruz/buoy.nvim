@@ -4,7 +4,7 @@
 
 local M = {}
 
-local state = { buf = nil, win = nil }
+local state = { buf = nil, win = nil, rebuilding = false }
 
 local function win_valid()
   return state.win and vim.api.nvim_win_is_valid(state.win)
@@ -18,12 +18,69 @@ local function clear_context()
   require("buoy.context").clear_selection()
 end
 
+--- True when the agent lives in a split (not a float) and is the only ordinary
+--- window left in its tabpage, so closing it would leave the tab empty.
+local function agent_is_last_ordinary_window()
+  if not win_valid() then
+    return false
+  end
+  -- A float overlays ordinary windows, so it never strands one: skip it.
+  if vim.api.nvim_win_get_config(state.win).relative ~= "" then
+    return false
+  end
+  local tab = vim.api.nvim_win_get_tabpage(state.win)
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(tab)) do
+    if win ~= state.win and vim.api.nvim_win_get_config(win).relative == "" then
+      return false
+    end
+  end
+  return true
+end
+
+local last_window_guard_installed = false
+
+--- Quit the agent split once it becomes the last ordinary window in its
+--- tabpage (which, on the last tab, exits Neovim). Installed once per session
+--- and gated on `window.stay`, read live so the flag applies without a restart.
+local function ensure_last_window_guard()
+  if last_window_guard_installed then
+    return
+  end
+  last_window_guard_installed = true
+
+  vim.api.nvim_create_autocmd("WinClosed", {
+    group = vim.api.nvim_create_augroup("BuoyLastWindow", { clear = true }),
+    callback = function(args)
+      if require("buoy").config.window.stay then
+        return
+      end
+      -- Only react to *other* windows closing; the agent's own close is
+      -- handled by install_close_cleanup.
+      if not win_valid() or tonumber(args.match) == state.win then
+        return
+      end
+      -- Defer: during WinClosed the layout still counts the closing window.
+      vim.schedule(function()
+        if agent_is_last_ordinary_window() then
+          vim.api.nvim_win_call(state.win, function()
+            vim.cmd("quit")
+          end)
+        end
+      end)
+    end,
+  })
+end
+
 local function install_close_cleanup(win)
   vim.api.nvim_create_autocmd("WinClosed", {
     pattern = tostring(win),
     once = true,
     callback = function()
-      clear_context()
+      -- A rebuild's close is a mid-handoff teardown, not the end of one: skip
+      -- the clear so the selection survives into the reopened window.
+      if not state.rebuilding then
+        clear_context()
+      end
       if state.win == win then
         state.win = nil
       end
@@ -31,18 +88,101 @@ local function install_close_cleanup(win)
   })
 end
 
+--- The agent's fixed text-column width, clamped so the window (plus a floating
+--- border) still fits inside a narrow editor.
+local function compute_width(cfg)
+  return math.max(1, math.min(cfg.width, vim.o.columns - 2))
+end
+
+--- Shape of the current tabpage's ordinary (non-floating) windows. Floats are
+--- excluded: they overlay the layout rather than divide it.
+---
+--- Windows carrying 'winfixwidth' — file trees, symbol outlines, and the
+--- agent's own split — keep their columns when the layout changes, so they are
+--- measured as fixed overhead instead of as code that a split would squeeze.
+--- Returns the narrowest resizable code window (nil when there is none), the
+--- total width the layout spans, and the fixed overhead with and without the
+--- agent's own split, each including the window's separator column.
+local function layout_metrics()
+  local agent_split = win_valid()
+      and vim.api.nvim_win_get_config(state.win).relative == ""
+      and state.win
+    or nil
+  local narrowest, layout_width, fixed_other, fixed_agent = nil, 0, 0, 0
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if vim.api.nvim_win_get_config(win).relative == "" then
+      local width = vim.api.nvim_win_get_width(win)
+      -- win_screenpos is 1-based, so the right edge is col - 1 + width; the
+      -- widest edge is how many columns the whole layout occupies.
+      layout_width = math.max(layout_width, vim.fn.win_screenpos(win)[2] - 1 + width)
+      if win == agent_split then
+        fixed_agent = width + 1
+      elseif vim.wo[win].winfixwidth then
+        fixed_other = fixed_other + width + 1
+      elseif not narrowest or width < narrowest then
+        narrowest = width
+      end
+    end
+  end
+  return narrowest, layout_width, fixed_other, fixed_agent
+end
+
+--- Resolve `window.style` to a concrete layout. An explicit "vsplit" or
+--- "float" always wins. "auto" keeps a vsplit while every code window would
+--- stay wider than the agent's fixed width, and floats once the split would
+--- squeeze one of them below it — so a narrow editor, or a tab already divided
+--- into columns, gets an overlay instead of crowded code.
+local function resolve_style(style, width)
+  if style == "vsplit" or style == "float" then
+    return style
+  end
+
+  local narrowest, layout_width, fixed_other, fixed_agent = layout_metrics()
+  if not narrowest then
+    -- Nothing here would be squeezed: the tab holds only fixed-width windows
+    -- (and possibly the agent split itself), so a split costs them nothing.
+    return "vsplit"
+  end
+
+  -- Compare like with like. The narrowest code window holds some share of
+  -- today's resizable area; project that share onto the resizable area the
+  -- editor would have with the agent split in it. Taking the layout's shape
+  -- from the real windows and its size from 'columns' is what keeps the
+  -- decision correct in a tab already divided into columns, where treating the
+  -- editor as a single code window would squeeze every window below the
+  -- agent's own width.
+  local code_area_now = math.max(layout_width - fixed_other - fixed_agent, 1)
+  local code_area_next = math.max(vim.o.columns - fixed_other - width - 1, 1)
+  local projected = math.floor(narrowest / code_area_now * code_area_next)
+  return projected > width and "vsplit" or "float"
+end
+
+--- The layout the agent currently occupies, or — when it is hidden — the one it
+--- would open into under the current config and editor width. Drives the
+--- layout-aware keymaps so a key's action tracks what is (or would be) on screen.
+local function current_layout()
+  if win_valid() then
+    return vim.api.nvim_win_get_config(state.win).relative ~= "" and "float" or "vsplit"
+  end
+  local cfg = require("buoy").config.window
+  return resolve_style(cfg.style, compute_width(cfg))
+end
+
 local function open_window()
   local plugin = require("buoy")
   local cfg = plugin.config.window
-  -- cfg.width is a fixed count of text columns for the agent TUI. Clamp so the
-  -- window (plus a floating border) still fits inside a narrow editor.
-  local width = math.max(1, math.min(cfg.width, vim.o.columns - 2))
+  local width = compute_width(cfg)
+  local style = resolve_style(cfg.style, width)
 
-  if cfg.style == "vsplit" then
+  if style == "vsplit" then
     vim.cmd("botright vsplit")
     state.win = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_width(state.win, width)
     vim.api.nvim_win_set_buf(state.win, state.buf)
+    -- `width` is a fixed column count, so hold it against the window commands
+    -- that would otherwise redistribute it: `<C-w>=` and every new split
+    -- equalize around a window unless it is pinned.
+    vim.wo[state.win].winfixwidth = true
   else
     local height = vim.o.lines - 4
     state.win = vim.api.nvim_open_win(state.buf, true, {
@@ -67,6 +207,7 @@ local function open_window()
   vim.wo[state.win].signcolumn = "no"
   vim.wo[state.win].foldcolumn = "0"
   install_close_cleanup(state.win)
+  ensure_last_window_guard()
 end
 
 local function start_term(argv)
@@ -173,10 +314,32 @@ function M.open()
   vim.cmd.startinsert()
 end
 
-function M.hide()
-  if win_valid() then
-    vim.api.nvim_win_close(state.win, true)
+--- Put an ordinary window back beside the agent so closing the agent does not
+--- strand the tabpage. Reuses the alternate buffer — with `window.stay` the
+--- agent typically outlived the user's last code window, so that buffer is the
+--- file they were editing — and falls back to an empty one.
+local function open_replacement_window()
+  local alt = vim.fn.bufnr("#")
+  local buf
+  if alt > 0 and alt ~= state.buf and vim.api.nvim_buf_is_valid(alt) then
+    buf = alt
+  else
+    buf = vim.api.nvim_create_buf(true, false)
   end
+  vim.api.nvim_open_win(buf, false, { split = "left", win = state.win })
+end
+
+function M.hide()
+  if not win_valid() then
+    return
+  end
+  -- Neovim refuses to close the last window (E444), which `window.stay = true`
+  -- makes reachable: the agent can outlive every other window in its tabpage.
+  -- Hiding still means hiding, so restore an ordinary window and then close.
+  if agent_is_last_ordinary_window() then
+    open_replacement_window()
+  end
+  vim.api.nvim_win_close(state.win, true)
 end
 
 --- Switch focus between the agent terminal and the last active window without
@@ -212,6 +375,96 @@ function M.toggle()
   else
     M.open()
   end
+end
+
+--- Rebuild the agent window in the resolved layout without disturbing its
+--- session: the terminal buffer outlives the window, so close the current
+--- window and reopen through open_window(), then restore whichever side (agent
+--- or code) held focus. Also preserves an active visual-selection handoff:
+--- state.rebuilding suppresses install_close_cleanup's clear_context() across
+--- the close, since this teardown is not the end of the handoff, just a
+--- window swap mid-session. Assumes state.win is valid and on the current
+--- tabpage.
+local function rebuild_window()
+  local had_focus = vim.api.nvim_get_current_win() == state.win
+  local prev = (not had_focus) and vim.api.nvim_get_current_win() or nil
+  -- Entering and leaving windows ends Visual mode, so a rebuild triggered while
+  -- the user is mid-selection would silently discard it. Note it now and
+  -- reselect below.
+  local had_selection = prev ~= nil and vim.fn.mode():match("[vV\22]") ~= nil
+
+  state.rebuilding = true
+  M.hide() -- closes the window; state.buf (the running agent) is untouched
+  local ok, err = pcall(open_window) -- reopens the resolved layout for the same buffer, focusing the agent
+  state.rebuilding = false
+  if not ok then
+    error(err, 0)
+  end
+
+  if had_focus then
+    vim.cmd.startinsert()
+  elseif prev and vim.api.nvim_win_is_valid(prev) then
+    vim.api.nvim_set_current_win(prev)
+    if had_selection then
+      -- `gv` reselects the region the rebuild just ended, restoring its mode
+      -- (charwise, linewise, or blockwise), anchor, and cursor together.
+      vim.cmd("normal! gv")
+    end
+  end
+end
+
+--- Re-evaluate the agent's layout against the current editor size and adapt in
+--- place. With `style = "auto"` a resize that crosses the vsplit/float boundary
+--- rebuilds into the other layout (reusing the session); otherwise the existing
+--- window's geometry is refreshed so a float stays anchored and a vsplit keeps
+--- its fixed width. A no-op when the agent is hidden or on another tabpage.
+function M.relayout()
+  if not win_valid() or not buf_valid() then
+    return
+  end
+  -- A rebuild uses botright vsplit, which targets the current tabpage, and the
+  -- geometry math is global; only act while the agent is on the active tab. A
+  -- backgrounded agent re-detects its layout on its next show.
+  if vim.api.nvim_win_get_tabpage(state.win) ~= vim.api.nvim_get_current_tabpage() then
+    return
+  end
+
+  local cfg = require("buoy").config.window
+  local width = compute_width(cfg)
+  local target = resolve_style(cfg.style, width)
+
+  if target ~= current_layout() then
+    if target == "float" and agent_is_last_ordinary_window() then
+      return -- no ordinary window left to overlay; keep the split
+    end
+    rebuild_window()
+    return
+  end
+
+  -- Same layout: keep its geometry in step with the resized editor.
+  if target == "float" then
+    vim.api.nvim_win_set_config(state.win, {
+      relative = "editor",
+      row = 1,
+      col = vim.o.columns - width - 1,
+      width = width,
+      height = vim.o.lines - 4,
+    })
+  else
+    vim.api.nvim_win_set_width(state.win, width)
+  end
+end
+
+local resize_timer
+
+--- Debounced VimResized entry point: a resize drag emits a burst of events, so
+--- coalesce them and re-lay-out once the size settles.
+function M.on_resize()
+  if resize_timer and not resize_timer:is_closing() then
+    resize_timer:stop()
+    resize_timer:close()
+  end
+  resize_timer = vim.defer_fn(M.relayout, 60)
 end
 
 return M

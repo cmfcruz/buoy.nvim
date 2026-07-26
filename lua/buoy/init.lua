@@ -13,7 +13,7 @@ M.config = {
   agent = "auto", -- "auto" | "claude" | "codex"; auto prefers an installed CLI (Claude Code first)
   cmd = nil, -- override the agent's default binary (optional)
   window = {
-    style = "float", -- "float" | "vsplit"
+    style = "auto", -- "auto" | "vsplit" | "float"; auto splits when the code stays wider than width, else floats
     width = 80, -- fixed columns of text for the agent
     border = "rounded",
   },
@@ -233,6 +233,28 @@ function M.setup(opts)
       require("buoy.terminal").focus_toggle()
     end, { desc = "buoy: focus switch", silent = true })
   end
+
+  -- Keep the agent window's layout in step with the editor size: an "auto"
+  -- window flips between split and float across the width boundary, and a float
+  -- stays anchored to the resized editor. relayout() only acts on the agent's
+  -- own tabpage, so a resize while another tab is active is a no-op there;
+  -- TabEnter catches up on that missed relayout when the agent's tab regains
+  -- focus.
+  local resize_group = vim.api.nvim_create_augroup("BuoyResize", { clear = true })
+  vim.api.nvim_create_autocmd("VimResized", {
+    group = resize_group,
+    callback = function()
+      require("buoy.terminal").on_resize()
+    end,
+    desc = "buoy: re-evaluate the agent layout on editor resize",
+  })
+  vim.api.nvim_create_autocmd("TabEnter", {
+    group = resize_group,
+    callback = function()
+      require("buoy.terminal").relayout()
+    end,
+    desc = "buoy: re-evaluate the agent layout when returning to its tab",
+  })
 end
 
 --- Apply zero-configuration defaults if explicit setup has not run yet.
