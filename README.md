@@ -161,10 +161,12 @@ require("buoy").setup({
   to disable `get_diagnostics`, and `expose_editor_context = false` to drop the
   per-prompt editor snapshot and the visual-selection handoff. A disabled
   capability is both omitted from the agent's instructions and refused if called.
-  Turn all three off to run buoy as a plain window switcher between the agent and
-  your editor. This is a capability/privacy control, not a security boundary — a
-  hosted agent can still read files through its own tools. Cursor navigation
-  (`set_cursor_position`) is always available; it exposes nothing.
+  Turn all three off to disable buoy's buffer-content, diagnostic, and per-prompt
+  context surfaces. This is a capability/privacy control, not a security boundary
+  — a hosted agent can still read files through its own tools. Cursor navigation
+  (`set_cursor_position`) is always available; when invoked, it returns navigation
+  metadata including the destination's absolute path and final cursor position,
+  but not file contents.
 - Every key is optional; anything you omit keeps its default.
 
 ## Per-prompt context enrichment
