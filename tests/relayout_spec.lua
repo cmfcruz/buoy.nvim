@@ -42,7 +42,7 @@ local ok, err = xpcall(function()
 
   -- style = "auto" resolves to a vsplit while the code buffer would stay wider
   -- than the agent's width, and a float otherwise. With width 80 the boundary
-  -- is columns > 160.
+  -- is 161 columns including the separator: 161 floats, 162 splits.
   local config = {
     agent = "codex",
     cmd = vim.o.shell,
@@ -85,6 +85,23 @@ local ok, err = xpcall(function()
   local buf = vim.api.nvim_get_current_buf()
   truthy(vim.bo[buf].buftype == "terminal", "opening starts a terminal session")
   eq("vsplit", agent_layout(buf), "a wide editor opens the agent as a vsplit")
+
+  -- The resolver must be stable on both sides of its exact boundary. Its input
+  -- geometry changes when a rebuild adds or removes the agent split; resolving
+  -- that new geometry differently would make repeated resize events oscillate.
+  vim.o.columns = 161
+  terminal.relayout()
+  eq("float", agent_layout(buf), "the equality boundary resolves to a float")
+  local boundary_win = agent_win(buf)
+  terminal.relayout()
+  eq(boundary_win, agent_win(buf), "re-resolving the float boundary does not rebuild")
+
+  vim.o.columns = 162
+  terminal.relayout()
+  eq("vsplit", agent_layout(buf), "one column past the boundary resolves to a split")
+  boundary_win = agent_win(buf)
+  terminal.relayout()
+  eq(boundary_win, agent_win(buf), "re-resolving the split boundary does not rebuild")
 
   -- Narrowing across the boundary flips it to a float, same session, and
   -- preserves an active visual-selection handoff instead of clearing it.
