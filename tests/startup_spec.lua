@@ -83,7 +83,7 @@ local ok, err = xpcall(function()
       agent = "codex",
       cmd = vim.o.shell,
       title = " Test ",
-      window = { style = "float", width = 0.4, border = "rounded" },
+      window = { style = "vsplit", width = 80, border = "rounded", stay = true },
     },
     socket = "/tmp/buoy-startup-spec.sock",
     ensure_setup = function() end,
@@ -123,8 +123,33 @@ local ok, err = xpcall(function()
   vim.fn.executable = original_executable
 
   truthy(type(terminal_exit) == "function", "opening registers terminal exit cleanup")
-  terminal_exit()
+  local agent_win = vim.api.nvim_get_current_win()
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if win ~= agent_win and vim.api.nvim_win_get_config(win).relative == "" then
+      vim.api.nvim_win_close(win, true)
+    end
+  end
+  truthy(
+    #vim.api.nvim_tabpage_list_wins(0) == 1,
+    "the stayed agent can be the tabpage's only window"
+  )
+
+  local exited, exit_err = pcall(terminal_exit)
+  truthy(exited, "an agent-only terminal exits without E444: " .. tostring(exit_err))
   truthy(not vim.api.nvim_buf_is_valid(terminal_buf), "the test terminal exits cleanly")
+  local remaining = vim.api.nvim_tabpage_list_wins(0)
+  truthy(#remaining == 1, "terminal exit leaves one replacement window")
+  truthy(
+    vim.api.nvim_win_get_config(remaining[1]).relative == "",
+    "the replacement window is ordinary"
+  )
+
+  terminal.open()
+  truthy(
+    vim.api.nvim_get_current_buf() ~= terminal_buf,
+    "opening after terminal exit starts a fresh session"
+  )
+  terminal_exit()
   vim.fn.termopen = original_termopen
 
   package.loaded["buoy.context"] = nil

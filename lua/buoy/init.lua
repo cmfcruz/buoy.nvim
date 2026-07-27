@@ -1,7 +1,11 @@
 --- buoy.nvim
---- Floats on the surface, anchored to the code.
+--- Floats or docks — stays anchored to the code.
 --- An agent's official TUI (Codex / Claude Code) in a float or split, plus
 --- live editor context and navigation through a private agent CLI.
+
+if vim.fn.has("nvim-0.11") == 0 then
+  error("buoy.nvim requires Neovim 0.11 or newer")
+end
 
 local M = {}
 
@@ -9,14 +13,20 @@ M.config = {
   agent = "auto", -- "auto" | "claude" | "codex"; auto prefers an installed CLI (Claude Code first)
   cmd = nil, -- override the agent's default binary (optional)
   window = {
-    style = "float", -- "float" | "vsplit"
-    width = 0.40, -- fraction of editor width
+    style = "auto", -- "auto" | "vsplit" | "float"; auto splits when the code stays wider than width, else floats
+    width = 80, -- fixed columns of text for the agent
     border = "rounded",
+    stay = false, -- keep the agent split open after all other windows close (default: quit with them)
   },
   keymaps = {
-    toggle = "<S-F2>", -- show/hide the agent window; set to false to disable
-    focus = "<F2>", -- switch focus terminal <-> last window; set to false to disable
+    -- Actions are layout-aware: the primary key does a vsplit's always-on action
+    -- (focus) or a float's (show/hide); the secondary key does the other.
+    primary = "<F2>", -- focus in a vsplit, show/hide in a float; false to disable
+    secondary = "<S-F2>", -- show/hide in a vsplit, focus in a float; false to disable
   },
+  -- Gated agent-facing surfaces; keys and defaults live in buoy.capabilities so
+  -- no module re-declares them (see that file for per-key descriptions).
+  context = vim.deepcopy(require("buoy.capabilities").defaults),
 }
 
 -- Built-in agent presets. `cmd` is the CLI launched in the agent window;
@@ -175,6 +185,18 @@ function M.setup(opts)
 
   local config = vim.tbl_deep_extend("force", M.config, opts or {})
 
+  -- window.width is a fixed column count: require a whole number, and reject
+  -- anything below this floor, where the agent window renders as an unusable
+  -- sliver.
+  local width = config.window.width
+  if type(width) ~= "number" or width % 1 ~= 0 or width < 40 then
+    error(
+      ("buoy: window.width %s is invalid (expected an integer of at least 40 columns)"):format(
+        vim.inspect(width)
+      )
+    )
+  end
+
   -- $BUOY_AGENT overrides the configured agent (e.g. BUOY_AGENT=codex nvim).
   local env_agent = vim.env.BUOY_AGENT
   if env_agent and env_agent ~= "" then
@@ -203,17 +225,39 @@ function M.setup(opts)
   ensure_context_window_inoculated()
   require("buoy.context").setup()
 
-  if config.keymaps.toggle then
-    vim.keymap.set({ "n", "x", "t" }, config.keymaps.toggle, function()
-      require("buoy.terminal").toggle()
-    end, { desc = "buoy: toggle", silent = true })
+  if config.keymaps.primary then
+    vim.keymap.set({ "n", "x", "t" }, config.keymaps.primary, function()
+      require("buoy.terminal").on_primary()
+    end, { desc = "buoy: agent primary (focus in split, show/hide in float)", silent = true })
   end
 
-  if config.keymaps.focus then
-    vim.keymap.set({ "n", "x", "t" }, config.keymaps.focus, function()
-      require("buoy.terminal").focus_toggle()
-    end, { desc = "buoy: focus switch", silent = true })
+  if config.keymaps.secondary then
+    vim.keymap.set({ "n", "x", "t" }, config.keymaps.secondary, function()
+      require("buoy.terminal").on_secondary()
+    end, { desc = "buoy: agent secondary (show/hide in split, focus in float)", silent = true })
   end
+
+  -- Keep the agent window's layout in step with the editor size: an "auto"
+  -- window flips between split and float across the width boundary, and a float
+  -- stays anchored to the resized editor. relayout() only acts on the agent's
+  -- own tabpage, so a resize while another tab is active is a no-op there;
+  -- TabEnter catches up on that missed relayout when the agent's tab regains
+  -- focus.
+  local resize_group = vim.api.nvim_create_augroup("BuoyResize", { clear = true })
+  vim.api.nvim_create_autocmd("VimResized", {
+    group = resize_group,
+    callback = function()
+      require("buoy.terminal").on_resize()
+    end,
+    desc = "buoy: re-evaluate the agent layout on editor resize",
+  })
+  vim.api.nvim_create_autocmd("TabEnter", {
+    group = resize_group,
+    callback = function()
+      require("buoy.terminal").relayout()
+    end,
+    desc = "buoy: re-evaluate the agent layout when returning to its tab",
+  })
 end
 
 --- Apply zero-configuration defaults if explicit setup has not run yet.

@@ -60,8 +60,8 @@ end
 
 -- Build the handoff selection from two getpos()-style positions and a visual mode
 -- char ("v"/"V"/Ctrl-V). Orders the positions, extracts the exact text with
--- getregion() (Neovim 0.10+, whole lines otherwise), and records editor-only
--- details beside the payload so the agent is not handed internal buffer state.
+-- getregion(), and records editor-only details beside the payload so the agent
+-- is not handed internal buffer state.
 --
 -- start_col/end_col are 1-based, inclusive byte columns so the agent can locate
 -- a sub-line selection precisely. Linewise (V) selections span whole lines, and
@@ -73,12 +73,7 @@ local function set_selection(buf, p1, p2, vmode)
     s, e = e, s
   end
 
-  local text
-  if vim.fn.has("nvim-0.10") == 1 then
-    text = table.concat(vim.fn.getregion(s, e, { type = vmode }), "\n")
-  else
-    text = table.concat(vim.api.nvim_buf_get_lines(buf, s[2] - 1, e[2], false), "\n")
-  end
+  local text = table.concat(vim.fn.getregion(s, e, { type = vmode }), "\n")
 
   local start_col, end_col
   if vmode == "V" then
@@ -165,9 +160,9 @@ function M.paint_selection()
   end
 
   local sel = handoff.payload
-  if sel.mode == "V" or vim.fn.exists("*getregionpos") == 0 then
-    -- Linewise (or no getregionpos): whole lines, including past the last
-    -- character (hl_eol), matching what linewise visual mode shows.
+  if sel.mode == "V" then
+    -- Linewise: whole lines, including past the last character (hl_eol),
+    -- matching what linewise visual mode shows.
     for row = sel.start_line, sel.end_line do
       vim.api.nvim_buf_set_extmark(handoff.buf, ns, row - 1, 0, {
         line_hl_group = "Visual",

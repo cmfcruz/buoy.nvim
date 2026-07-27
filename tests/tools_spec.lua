@@ -195,6 +195,54 @@ local ok, err = xpcall(function()
   eq(50, #second_page.diagnostics, "the offset continues where the first page ended")
   eq(201, second_page.diagnostics[1].line, "continuation resumes at the next record")
   eq(false, second_page.truncated, "the final diagnostics page is not truncated")
+
+  -- Capability switches gate the agent-facing read operations. Each defaults on;
+  -- disabling one makes dispatch refuse that operation with CAPABILITY_DISABLED
+  -- while the others keep working. set_cursor_position is never gated.
+  local context_config = require("buoy").config.context
+
+  context_config.expose_buffers = false
+  eq(
+    "CAPABILITY_DISABLED",
+    tools.dispatch("get_buffer_range", { file = big_file, start_line = 1, end_line = 1 }).code,
+    "get_buffer_range is refused when expose_buffers is off"
+  )
+  eq(
+    "diagnostics",
+    tools.dispatch("get_diagnostics", { file = big_file }).kind,
+    "disabling buffers leaves diagnostics working"
+  )
+  context_config.expose_buffers = true
+  eq(
+    "buffer_range",
+    tools.dispatch("get_buffer_range", { file = big_file, start_line = 1, end_line = 1 }).kind,
+    "re-enabling buffers restores the read"
+  )
+
+  context_config.expose_diagnostics = false
+  eq(
+    "CAPABILITY_DISABLED",
+    tools.dispatch("get_diagnostics", { file = big_file }).code,
+    "get_diagnostics is refused when expose_diagnostics is off"
+  )
+  eq(
+    "buffer_range",
+    tools.dispatch("get_buffer_range", { file = big_file, start_line = 1, end_line = 1 }).kind,
+    "disabling diagnostics leaves buffer reads working"
+  )
+  context_config.expose_diagnostics = true
+
+  -- Navigation is never gated: even with both read switches off, dispatch does
+  -- not report CAPABILITY_DISABLED for set_cursor_position.
+  context_config.expose_buffers = false
+  context_config.expose_diagnostics = false
+  truthy(
+    tools.dispatch("set_cursor_position", { file = big_file, line = 1 }).code
+      ~= "CAPABILITY_DISABLED",
+    "set_cursor_position is never gated by the expose switches"
+  )
+  context_config.expose_buffers = true
+  context_config.expose_diagnostics = true
 end, debug.traceback)
 
 vim.fn.delete(temp, "rf")

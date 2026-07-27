@@ -1,0 +1,24 @@
+title: buoy.nvim
+description: "Floats or docks — stays anchored to the code."
+theme: jekyll-theme-cayman
+
+url: "https://cmfcruz.github.io"
+baseurl: "/buoy.nvim"
+
+# Keep non-content paths out of the published site and the Jekyll build.
+# Dotfiles and _config.yml are excluded automatically.
+exclude:
+  - lua/
+  - plugin/
+  - bridge/
+  - tests/
+  - tmp/
+  - AGENTS.md
+  - nvim.log
+  - version.txt
+  - vim.yml
+  - selene.toml
+  - "*.toml"
+  - .pre-commit-config.yaml
+  - release-please-config.json
+  - .release-please-manifest.json

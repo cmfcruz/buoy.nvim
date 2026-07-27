@@ -13,9 +13,12 @@ local function ctx()
   return require("buoy.context").state
 end
 
-local function err(code, message)
-  return { kind = "error", code = code, message = message }
+local function config()
+  return require("buoy").config
 end
+
+local err = require("buoy.error")
+local capabilities = require("buoy.capabilities")
 
 local function is_pos_int(value)
   return type(value) == "number" and value >= 1 and value % 1 == 0
@@ -98,6 +101,7 @@ local operations = {
   {
     name = "get_buffer_range",
     args = { file = true, start_line = true, end_line = true },
+    capability = "expose_buffers",
     handler = function(args)
       if not is_pos_int(args.start_line) or not is_pos_int(args.end_line) then
         return err("INVALID_ARGUMENT", "start_line and end_line must be positive integers.")
@@ -132,6 +136,7 @@ local operations = {
   {
     name = "get_diagnostics",
     args = { file = true, offset = true },
+    capability = "expose_diagnostics",
     handler = function(args)
       local offset = args.offset or 0
       if type(offset) ~= "number" or offset < 0 or offset % 1 ~= 0 then
@@ -192,10 +197,22 @@ local operations = {
   },
 }
 
+-- Fail fast on a mistyped capability key: a name absent from the registry
+-- would silently never gate its operation.
+for _, t in ipairs(operations) do
+  assert(
+    t.capability == nil or capabilities.defaults[t.capability] ~= nil,
+    "buoy.tools: unknown capability " .. tostring(t.capability)
+  )
+end
+
 --- Dispatch one of the three editor operations requested by the agent CLI.
 function M.dispatch(name, args)
   for _, t in ipairs(operations) do
     if t.name == name then
+      if t.capability and not config().context[t.capability] then
+        return err("CAPABILITY_DISABLED", "This capability is disabled by buoy configuration.")
+      end
       if args == nil then
         args = {}
       elseif type(args) ~= "table" then

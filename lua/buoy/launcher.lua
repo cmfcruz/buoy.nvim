@@ -6,7 +6,7 @@ function M.resolve(agent, cmd, cwd, callback)
     if not warned_windows then
       warned_windows = true
       vim.notify(
-        "buoy: live editor context and operations are unavailable on Windows in v2; launching the terminal only",
+        "buoy: live editor context and operations are unavailable on Windows; launching the terminal only",
         vim.log.levels.WARN
       )
     end
@@ -15,8 +15,13 @@ function M.resolve(agent, cmd, cwd, callback)
   end
 
   local instructions = require("buoy.instructions")
-  local neovim_instructions = instructions.neovim_instructions()
-  local hook_command = instructions.hook_command()
+  local context = require("buoy").config.context
+  -- config.context already carries exactly the keys neovim_instructions reads,
+  -- so pass it straight through instead of rebuilding the table.
+  local neovim_instructions = instructions.neovim_instructions(context)
+  -- expose_editor_context off ⇒ no per-prompt snapshot; a nil hook_command makes
+  -- the argv builders omit the UserPromptSubmit hook entirely.
+  local hook_command = context.expose_editor_context and instructions.hook_command() or nil
   if agent == "claude" then
     callback(instructions.claude_argv(cmd, neovim_instructions, hook_command))
     return
