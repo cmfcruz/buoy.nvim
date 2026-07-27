@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.0.0](https://github.com/cmfcruz/buoy.nvim/compare/v2.0.0...v3.0.0) (2026-07-27)
+
+
+### ⚠ BREAKING CHANGES
+
+* buoy.nvim now requires Neovim 0.11 or newer; `window.width` accepts a fixed integer column count of at least 40 instead of a screen fraction; `window.style` defaults to `auto` instead of `float`; `keymaps.focus` and `keymaps.toggle` are replaced by `keymaps.primary` and `keymaps.secondary`; and an agent split now quits when it becomes the last ordinary window in its tabpage unless `window.stay = true`, exiting Neovim when that is the final tab.
+
+### Features
+
+* ship buoy v3 with adaptive layouts ([#22](https://github.com/cmfcruz/buoy.nvim/issues/22)) ([19824d5](https://github.com/cmfcruz/buoy.nvim/commit/19824d5e085c0cf20fdc30aa8faa70c6561b2f9f))
+
 ## [2.0.0](https://github.com/cmfcruz/buoy.nvim/compare/v1.3.0...v2.0.0) (2026-07-17)
 
 
