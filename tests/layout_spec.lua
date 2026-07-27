@@ -147,7 +147,9 @@ local ok, err = xpcall(function()
   terminal.relayout()
   eq("vsplit", agent_layout(buf), "widening rebuilds the float as a split")
   code_win = code_wins(buf)[1]
+  local closed_code_buf = vim.api.nvim_win_get_buf(code_win)
   vim.api.nvim_win_close(code_win, true)
+  vim.api.nvim_buf_delete(closed_code_buf, { force = true })
   eq(1, #vim.api.nvim_tabpage_list_wins(0), "the agent can be the tabpage's only window")
 
   local hidden, hide_err = pcall(terminal.toggle)
@@ -159,9 +161,36 @@ local ok, err = xpcall(function()
     eq("", vim.api.nvim_win_get_config(win).relative, "the replacement window is ordinary")
   end
 
+  local listed_before = #vim.fn.getbufinfo({ buflisted = 1 })
+  local deleted_file = vim.fn.tempname()
+  vim.fn.writefile({ "temporary" }, deleted_file)
+  vim.cmd("badd " .. vim.fn.fnameescape(deleted_file))
+  vim.cmd("buffer " .. vim.fn.bufnr(deleted_file))
+
   local shown, show_err = pcall(terminal.toggle)
   truthy(shown, "a second toggle reopens the agent without error: " .. tostring(show_err))
   truthy(agent_win(buf) ~= nil, "a second toggle brings the existing agent session back")
+
+  -- Wiping the alternate file while the agent is open strands it again with
+  -- no usable '#'. Reuse the fallback buffer buoy already created instead of
+  -- leaving another empty listed buffer behind on every such cycle.
+  code_win = code_wins(buf)[1]
+  vim.api.nvim_set_current_win(code_win)
+  vim.cmd("bwipeout")
+  vim.fn.delete(deleted_file)
+  vim.api.nvim_set_current_win(agent_win(buf))
+  local alt = vim.fn.bufnr("#")
+  truthy(
+    alt <= 0 or not vim.api.nvim_buf_is_valid(alt),
+    "precondition: the agent has no reusable alternate buffer"
+  )
+  terminal.hide()
+  eq(
+    listed_before,
+    #vim.fn.getbufinfo({ buflisted = 1 }),
+    "repeated fallback does not accumulate listed buffers"
+  )
+  terminal.open()
 
   -- A pinned sidebar (file tree, symbol outline) keeps its columns when the
   -- layout changes, so it is fixed overhead rather than code the agent would

@@ -4,7 +4,7 @@
 
 local M = {}
 
-local state = { buf = nil, win = nil, rebuilding = false }
+local state = { buf = nil, win = nil, rebuilding = false, replacement_buf = nil }
 
 local function win_valid()
   return state.win and vim.api.nvim_win_is_valid(state.win)
@@ -327,8 +327,15 @@ local function open_replacement_window()
   local buf
   if alt > 0 and alt ~= state.buf and vim.api.nvim_buf_is_valid(alt) then
     buf = alt
+  elseif
+    state.replacement_buf
+    and state.replacement_buf ~= state.buf
+    and vim.api.nvim_buf_is_valid(state.replacement_buf)
+  then
+    buf = state.replacement_buf
   else
     buf = vim.api.nvim_create_buf(true, false)
+    state.replacement_buf = buf
   end
   vim.api.nvim_open_win(buf, false, { split = "left", win = state.win })
 end
