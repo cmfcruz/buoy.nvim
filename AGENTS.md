@@ -19,15 +19,19 @@ agent CLI, and shared Neovim RPC discovery. There is no MCP server; the CLI expo
 `get_buffer_range`, `get_diagnostics`, and `set_cursor_position`. Bridge children run with
 `nvim --headless -u NONE -i NONE -l`. The live bridge is attached only on Linux and macOS;
 Windows keeps the terminal UI without live editor context. Self-contained headless specs
-live in `tests/`. CI and release automation live in `.github/workflows/`. Do not commit
-generated files such as `nvim.log`.
+live in `tests/`. Project-site media live under `docs/`, while `_config.yml` configures the
+root-based GitHub Pages site that renders the README as its index. CI and release automation
+live in `.github/workflows/`. Do not commit generated files such as `nvim.log`, `_site/`, or
+`.jekyll-cache/`.
 
 ## Build, Test, and Development Commands
 
 The plugin has no build step. Run these commands from the repository root:
 
 - `for spec in tests/*_spec.lua; do nvim --headless -u NONE -i NONE -l "$spec"; done` runs
-  the full headless suite. `tests/tools_spec.lua` is the quickest focused operation check.
+  the full headless suite. `tests/tools_spec.lua` is the quickest focused operation check;
+  `tests/layout_spec.lua`, `tests/relayout_spec.lua`, and `tests/capabilities_spec.lua`
+  cover the adaptive-window and capability contracts.
 - `stylua --check .` checks Lua formatting; run `stylua .` to apply formatting.
 - `selene .` lints Lua using the repository's Lua 5.1 and Neovim global definitions.
 - `pre-commit install` enables local formatting and repository-hygiene hooks.
@@ -84,17 +88,36 @@ focus. Keep both entry points in step.
 `style = "auto"` resolves against the real window layout, not `vim.o.columns` alone: it takes
 the layout's shape from the current windows and its size from `columns`, so a tab already
 divided into columns floats instead of squeezing every code window below `window.width`.
-Keep that resolver ratio-based — an absolute-width reading is untestable headlessly, where
-setting `vim.o.columns` updates the option a tick before the windows follow. The split sets
-`winfixwidth` to hold its fixed column count, and the user's own window commands
-deliberately do not trigger a relayout. Hiding always hides: when the agent split is the last
-ordinary window in its tabpage (reachable under `window.stay`), `hide()` restores an ordinary
-window before closing rather than surfacing `E444`.
+Fixed-width sidebars count as occupied screen columns, not as a sum of window widths, so
+vertically stacked sidebars that share columns contribute once. Keep that resolver
+ratio-based — an absolute-width reading is untestable headlessly, where setting
+`vim.o.columns` updates the option a tick before the windows follow. `window.width` is a
+fixed integer count of text columns with a minimum of 40, clamped only when rendering into a
+narrow editor. The split sets `winfixwidth` to hold that count, and the user's own window
+commands deliberately do not trigger a relayout.
+
+By default, closing the last code window also quits an agent split;
+`window.stay = true` lets the agent outlive it. Hiding still always hides: when the agent is
+the last ordinary window, `hide()` first restores the alternate buffer or a reusable
+fallback buffer before closing, rather than surfacing `E444`. Preserve the cached fallback;
+repeated hide cycles must not accumulate listed empty buffers.
+
+The three `context` switches default to `true` and are defined only in
+`capabilities.lua`. `expose_buffers` and `expose_diagnostics` control both the instructions
+shown to the agent and dispatch authorization for their read operations.
+`expose_editor_context` controls the per-prompt hook, snapshot, and selection handoff.
+`set_cursor_position` stays available even when every read surface is disabled; keep its
+1-based coordinate contract in the generated instructions. Add or change capabilities
+through the registry rather than duplicating capability lists across config, instructions,
+and tools.
 
 Configuration is applied once per Neovim session. Explicit `setup()` during startup wins
 over scheduled zero-config setup, later calls warn, and `BUOY_AGENT` is the supported
-per-session agent override. Preserve the visual-selection handoff and cleanup lifecycle
-when changing focus, hiding, or terminal exit behavior.
+per-session agent override. Validate configuration before setting the one-shot setup flag so
+a rejected value does not block a corrected call. Visual capture uses Neovim's region APIs
+for exact charwise, linewise, and blockwise text; do not restore a whole-line fallback.
+Preserve the visual-selection handoff and cleanup lifecycle when changing focus, hiding,
+rebuilding, or terminal exit behavior.
 
 ## Commit & Pull Request Guidelines
 
