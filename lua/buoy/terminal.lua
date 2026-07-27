@@ -228,7 +228,7 @@ local function start_term(argv)
       env = env,
       on_exit = function()
         if win_valid() then
-          vim.api.nvim_win_close(state.win, true)
+          M.hide()
         end
         if buf_valid() then
           vim.api.nvim_buf_delete(state.buf, { force = true })
