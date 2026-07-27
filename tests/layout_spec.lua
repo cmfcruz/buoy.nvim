@@ -182,8 +182,22 @@ local ok, err = xpcall(function()
   eq("vsplit", agent_layout(buf), "a pinned sidebar does not count as squeezable code")
   eq(30, vim.api.nvim_win_get_width(sidebar), "the agent split leaves a pinned sidebar alone")
 
-  -- Dividing the code area beside that sidebar does squeeze real code windows,
-  -- so auto overlays instead.
+  -- Fixed-width sidebars stacked in the same column share their horizontal
+  -- overhead. Counting each one separately would choose a float even though
+  -- the code still has room beside that single sidebar column.
+  terminal.hide()
+  vim.o.columns = 200
+  vim.wait(60)
+  vim.api.nvim_set_current_win(sidebar)
+  vim.cmd("split")
+  local lower_sidebar = vim.api.nvim_get_current_win()
+  vim.wo[lower_sidebar].winfixwidth = true
+  vim.api.nvim_set_current_win(code_win)
+  terminal.open()
+  eq("vsplit", agent_layout(buf), "stacked pinned sidebars count their shared columns once")
+
+  -- Dividing the code area beside those sidebars does squeeze real code
+  -- windows, so auto overlays instead.
   terminal.hide()
   vim.api.nvim_set_current_win(code_win)
   vim.cmd("vsplit")

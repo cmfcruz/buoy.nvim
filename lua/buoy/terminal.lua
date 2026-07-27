@@ -108,23 +108,27 @@ local function layout_metrics()
       and vim.api.nvim_win_get_config(state.win).relative == ""
       and state.win
     or nil
-  local narrowest, layout_width, fixed_other, fixed_agent = nil, 0, 0, 0
+  local narrowest, layout_width, fixed_agent = nil, 0, 0
+  local fixed_columns = {}
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if vim.api.nvim_win_get_config(win).relative == "" then
       local width = vim.api.nvim_win_get_width(win)
+      local col = vim.fn.win_screenpos(win)[2]
       -- win_screenpos is 1-based, so the right edge is col - 1 + width; the
       -- widest edge is how many columns the whole layout occupies.
-      layout_width = math.max(layout_width, vim.fn.win_screenpos(win)[2] - 1 + width)
+      layout_width = math.max(layout_width, col - 1 + width)
       if win == agent_split then
         fixed_agent = width + 1
       elseif vim.wo[win].winfixwidth then
-        fixed_other = fixed_other + width + 1
+        for fixed_col = col, col + width do
+          fixed_columns[fixed_col] = true
+        end
       elseif not narrowest or width < narrowest then
         narrowest = width
       end
     end
   end
-  return narrowest, layout_width, fixed_other, fixed_agent
+  return narrowest, layout_width, vim.tbl_count(fixed_columns), fixed_agent
 end
 
 --- Resolve `window.style` to a concrete layout. An explicit "vsplit" or
