@@ -85,6 +85,32 @@ local ok, err = xpcall(function()
   eq(file, snapshot.current.file, "snapshot carries the current file")
   eq({ line = 1, col = 1 }, snapshot.current.cursor, "snapshot carries the cursor")
 
+  local checktime_hook = root .. "/bridge/checktime_hook.lua"
+  vim.fn.writefile({ "local x = 2" }, file)
+  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  eq(0, code, "checktime hook exits 0 on success")
+  eq({ "" }, stdout, "checktime hook prints nothing")
+  truthy(
+    vim.wait(1000, function()
+      return vim.api.nvim_buf_get_lines(0, 0, 1, false)[1] == "local x = 2"
+    end, 10),
+    "checktime hook reloads a clean buffer changed outside Neovim"
+  )
+
+  local modified_file = temp .. "/modified.lua"
+  vim.fn.writefile({ "local x = 1" }, modified_file)
+  vim.cmd("edit " .. vim.fn.fnameescape(modified_file))
+  vim.api.nvim_buf_set_lines(0, 0, 1, false, { "local x = 2" })
+  vim.fn.writefile({ "local x = 3" }, modified_file)
+  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  eq(0, code, "checktime hook exits 0 when a buffer has unsaved edits")
+  eq({ "" }, stdout, "checktime hook prints nothing when a buffer has unsaved edits")
+  eq(
+    { "local x = 2" },
+    vim.api.nvim_buf_get_lines(0, 0, 1, false),
+    "checktime hook does not reload a buffer with unsaved edits"
+  )
+
   -- With no reachable Neovim the hook must print nothing and still exit 0:
   -- Claude Code treats exit 2 as "block the prompt", and any non-zero exit
   -- surfaces error noise. $NVIM is overridden because jobstart() sets it
@@ -96,6 +122,13 @@ local ok, err = xpcall(function()
   })
   eq(0, code, "hook exits 0 when no Neovim is reachable")
   eq({ "" }, stdout, "hook prints nothing when no Neovim is reachable")
+
+  stdout, code = run_script(checktime_hook, {
+    NVIM = missing,
+    NVIM_CONTEXT_SOCKET = missing,
+  })
+  eq(0, code, "checktime hook exits 0 when no Neovim is reachable")
+  eq({ "" }, stdout, "checktime hook prints nothing when no Neovim is reachable")
 end, debug.traceback)
 
 vim.fn.delete(temp, "rf")

@@ -7,7 +7,7 @@ local M = {}
 -- `context.*` switch in the public config:
 --   expose_buffers        allow get_buffer_range (agent reads live buffer contents)
 --   expose_diagnostics    allow get_diagnostics (agent reads buffer diagnostics)
---   expose_editor_context attach the per-prompt editor snapshot + selection handoff
+--   expose_editor_context attach editor hooks, prompt snapshot, and selection handoff
 M.list = {
   { key = "expose_buffers", default = true },
   { key = "expose_diagnostics", default = true },

@@ -86,11 +86,22 @@ local ok, err = xpcall(function()
   local hook_command = instructions.hook_command()
   truthy(
     hook_command:find("^'" .. vim.pesc(vim.v.progpath) .. "' %-%-headless %-u NONE %-i NONE %-l '"),
-    "hook command isolates the current nvim from user configuration"
+    "context hook command isolates the current nvim from user configuration"
   )
   truthy(
     hook_command:find("/bridge/context_hook%.lua'$"),
-    "hook command targets the bundled context hook script"
+    "context hook command targets the bundled context hook script"
+  )
+  local post_tool_hook_command = instructions.post_tool_hook_command()
+  truthy(
+    post_tool_hook_command:find(
+      "^'" .. vim.pesc(vim.v.progpath) .. "' %-%-headless %-u NONE %-i NONE %-l '"
+    ),
+    "PostToolUse hook command isolates the current nvim from user configuration"
+  )
+  truthy(
+    post_tool_hook_command:find("/bridge/checktime_hook%.lua'$"),
+    "PostToolUse hook command targets the bundled checktime hook script"
   )
   local cli_prefix = instructions.cli_prefix()
   truthy(
@@ -106,28 +117,52 @@ local ok, err = xpcall(function()
     "Buoy guidance includes the exact CLI prefix"
   )
 
-  local fake_hook = "'/path/to/nvim' --headless -l '/path/to/context_hook.lua'"
-  local codex_argv = instructions.codex_argv("codex-custom", consolidated, fake_hook)
+  local fake_context_hook = "'/path/to/nvim' --headless -l '/path/to/context_hook.lua'"
+  local fake_post_tool_hook = "'/path/to/nvim' --headless -l '/path/to/checktime_hook.lua'"
+  local codex_argv =
+    instructions.codex_argv("codex-custom", consolidated, fake_context_hook, fake_post_tool_hook)
   eq("codex-custom", codex_argv[1], "Codex command is preserved")
   eq("-c", codex_argv[2], "Codex receives a config override")
   local encoded = codex_argv[3]:sub(#"developer_instructions=" + 1)
   eq(consolidated, vim.json.decode(encoded), "multiline Codex instructions are safely encoded")
-  eq({
-    "-c",
-    'hooks.UserPromptSubmit=[{hooks=[{type="command",'
-      .. "command=\"'/path/to/nvim' --headless -l '/path/to/context_hook.lua'\",timeout=10}]}]",
-  }, { unpack(codex_argv, 4) }, "Codex argv attaches only its context hook after guidance")
+  eq(
+    {
+      "-c",
+      'hooks.UserPromptSubmit=[{hooks=[{type="command",'
+        .. "command=\"'/path/to/nvim' --headless -l '/path/to/context_hook.lua'\",timeout=10}]}]",
+      "-c",
+      'hooks.PostToolUse=[{matcher="Edit|Write",hooks=[{type="command",'
+        .. "command=\"'/path/to/nvim' --headless -l '/path/to/checktime_hook.lua'\",timeout=10}]}]",
+    },
+    { unpack(codex_argv, 4) },
+    "Codex argv attaches its prompt and PostToolUse hooks after guidance"
+  )
 
-  local claude_argv = instructions.claude_argv("claude-custom", neovim_instructions, fake_hook)
+  local claude_argv = instructions.claude_argv(
+    "claude-custom",
+    neovim_instructions,
+    fake_context_hook,
+    fake_post_tool_hook
+  )
   eq("claude-custom", claude_argv[1], "Claude command is preserved")
   eq("--append-system-prompt", claude_argv[2], "Claude receives the system prompt flag")
   eq(neovim_instructions, claude_argv[3], "Claude receives the Buoy guidance")
   eq("--settings", claude_argv[4], "Claude receives the settings flag")
   local settings = vim.json.decode(claude_argv[5])
   eq(
-    { { hooks = { { type = "command", command = fake_hook, timeout = 10 } } } },
+    { { hooks = { { type = "command", command = fake_context_hook, timeout = 10 } } } },
     settings.hooks.UserPromptSubmit,
     "Claude registers the context hook for every prompt"
+  )
+  eq(
+    {
+      {
+        matcher = "Edit|Write",
+        hooks = { { type = "command", command = fake_post_tool_hook, timeout = 10 } },
+      },
+    },
+    settings.hooks.PostToolUse,
+    "Claude registers the checktime hook after every native edit or write"
   )
 
   -- Capability switches drop disabled surfaces from the guidance. Navigation is
@@ -205,17 +240,21 @@ local ok, err = xpcall(function()
     "navigation-only guidance omits the diagnostics continuation argument"
   )
 
-  -- A nil hook_command omits the UserPromptSubmit hook from both argv builders.
-  local claude_no_hook = instructions.claude_argv("claude-custom", neovim_instructions, nil)
+  -- Nil hook commands omit both lifecycle hooks from both argv builders.
+  local claude_no_hook = instructions.claude_argv("claude-custom", neovim_instructions, nil, nil)
   truthy(
     not vim.list_contains(claude_no_hook, "--settings"),
     "Claude omits --settings when the hook is disabled"
   )
-  local codex_no_hook = instructions.codex_argv("codex-custom", consolidated, nil)
+  local codex_no_hook = instructions.codex_argv("codex-custom", consolidated, nil, nil)
   for _, entry in ipairs(codex_no_hook) do
     truthy(
-      type(entry) ~= "string" or not entry:find("hooks.UserPromptSubmit", 1, true),
-      "Codex omits the UserPromptSubmit hook when disabled"
+      type(entry) ~= "string"
+        or (
+          not entry:find("hooks.UserPromptSubmit", 1, true)
+          and not entry:find("hooks.PostToolUse", 1, true)
+        ),
+      "Codex omits lifecycle hooks when disabled"
     )
   end
 end, debug.traceback)
