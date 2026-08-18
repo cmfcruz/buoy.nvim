@@ -16,7 +16,16 @@ pcall(function()
     return
   end
 
-  pcall(rpc.exec, chan, 'vim.cmd("checktime")', {})
+  -- A non-interactive :checktime only refreshes buffers displayed in a window,
+  -- so check each loaded buffer explicitly to include hidden file buffers.
+  local code = [[
+    for _, buf in ipairs(vim.api.nvim_list_bufs()) do
+      if vim.api.nvim_buf_is_loaded(buf) then
+        pcall(vim.cmd, "checktime " .. buf)
+      end
+    end
+  ]]
+  pcall(rpc.exec, chan, code, {})
   pcall(vim.fn.chanclose, chan)
 end)
 

@@ -97,6 +97,38 @@ local ok, err = xpcall(function()
     "checktime hook reloads a clean buffer changed outside Neovim"
   )
 
+  local current_buf = vim.api.nvim_get_current_buf()
+  local hidden_file = temp .. "/hidden.lua"
+  vim.fn.writefile({ "local hidden = 1" }, hidden_file)
+  vim.cmd("edit " .. vim.fn.fnameescape(hidden_file))
+  local hidden_buf = vim.api.nvim_get_current_buf()
+  vim.cmd("buffer " .. current_buf)
+  vim.cmd("vnew")
+  vim.bo.buftype = "nofile"
+  eq({}, vim.fn.win_findbuf(hidden_buf), "hidden buffer is not displayed before refresh")
+
+  vim.fn.writefile({ "local hidden = 2" }, hidden_file)
+  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  eq(0, code, "checktime hook exits 0 after refreshing a hidden buffer")
+  eq({ "" }, stdout, "checktime hook prints nothing after refreshing a hidden buffer")
+  truthy(
+    vim.wait(1000, function()
+      return vim.api.nvim_buf_get_lines(hidden_buf, 0, 1, false)[1] == "local hidden = 2"
+    end, 10),
+    "checktime hook reloads a clean hidden buffer changed outside Neovim"
+  )
+
+  vim.api.nvim_buf_set_lines(hidden_buf, 0, 1, false, { "local hidden = 3" })
+  vim.fn.writefile({ "local hidden = 4" }, hidden_file)
+  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  eq(0, code, "checktime hook exits 0 for a modified hidden buffer")
+  eq(
+    { "local hidden = 3" },
+    vim.api.nvim_buf_get_lines(hidden_buf, 0, 1, false),
+    "checktime hook does not reload a hidden buffer with unsaved edits"
+  )
+  vim.cmd("close")
+
   local modified_file = temp .. "/modified.lua"
   vim.fn.writefile({ "local x = 1" }, modified_file)
   vim.cmd("edit " .. vim.fn.fnameescape(modified_file))
