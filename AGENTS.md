@@ -14,14 +14,15 @@ arguments and preserve Codex's effective instructions: `codex.lua` spawns the
 Codex's `developer_instructions`. User commands and zero-configuration startup live in
 `plugin/buoy.lua`.
 
-Standalone scripts under `bridge/` provide the per-prompt context hook, private one-shot
-agent CLI, and shared Neovim RPC discovery. There is no MCP server; the CLI exposes exactly
-`get_buffer_range`, `get_diagnostics`, and `set_cursor_position`. Bridge children run with
-`nvim --headless -u NONE -i NONE -l`. The live bridge is attached only on Linux and macOS;
-Windows keeps the terminal UI without live editor context. Self-contained headless specs
-live in `tests/`. Project-site media live under `docs/`, while `_config.yml` configures the
-root-based GitHub Pages site that renders the README as its index. CI and release automation
-live in `.github/workflows/`. Do not commit generated files such as `nvim.log`, `_site/`, or
+Standalone scripts under `bridge/` provide the per-prompt context hook, post-tool buffer
+refresh hook, private one-shot agent CLI, and shared Neovim RPC discovery. There is no MCP
+server; the CLI exposes exactly `get_buffer_range`, `get_diagnostics`, and
+`set_cursor_position`. Bridge children run with `nvim --headless -u NONE -i NONE -l`. The
+live bridge and hooks are attached only on Linux and macOS; Windows keeps the terminal UI
+without live editor context. Self-contained headless specs live in `tests/`. Project-site
+media live under `docs/`, while `_config.yml` configures the root-based GitHub Pages site
+that renders the README as its index. CI and release automation live in
+`.github/workflows/`. Do not commit generated files such as `nvim.log`, `_site/`, or
 `.jekyll-cache/`.
 
 ## Build, Test, and Development Commands
@@ -105,11 +106,18 @@ repeated hide cycles must not accumulate listed empty buffers.
 The three `context` switches default to `true` and are defined only in
 `capabilities.lua`. `expose_buffers` and `expose_diagnostics` control both the instructions
 shown to the agent and dispatch authorization for their read operations.
-`expose_editor_context` controls the per-prompt hook, snapshot, and selection handoff.
-`set_cursor_position` stays available even when every read surface is disabled; keep its
-1-based coordinate contract in the generated instructions. Add or change capabilities
-through the registry rather than duplicating capability lists across config, instructions,
-and tools.
+`expose_editor_context` controls both bridge hooks, the per-prompt snapshot, and the
+selection handoff. `set_cursor_position` stays available even when every read surface is
+disabled; keep its 1-based coordinate contract in the generated instructions. Add or change
+capabilities through the registry rather than duplicating capability lists across config,
+instructions, and tools.
+
+The synchronous `PostToolUse` hook runs after each completed native `Edit` or `Write` call
+and intentionally excludes shell writes through `Bash`. Its RPC command must check every
+loaded buffer explicitly: a bare non-interactive `:checktime` misses hidden buffers, which
+the private CLI can still read. Preserve Neovim's normal safety semantics — clean buffers
+reload only under `autoread`, modified buffers are never forced — and keep the hook
+stdin-independent, output-free, and successful even when the bridge cannot be reached.
 
 Configuration is applied once per Neovim session. Explicit `setup()` during startup wins
 over scheduled zero-config setup, later calls warn, and `BUOY_AGENT` is the supported
