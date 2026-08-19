@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.0](https://github.com/cmfcruz/buoy.nvim/compare/v3.0.0...v3.1.0) (2026-08-19)
+
+
+### Features
+
+* refresh buffers after agent edits ([#24](https://github.com/cmfcruz/buoy.nvim/issues/24)) ([d762f8e](https://github.com/cmfcruz/buoy.nvim/commit/d762f8e6ae47945288f4477d6325ba57f62930a0))
+
 ## [3.0.0](https://github.com/cmfcruz/buoy.nvim/compare/v2.0.0...v3.0.0) (2026-07-27)
 
 
