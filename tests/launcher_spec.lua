@@ -31,6 +31,7 @@ local original_has = vim.fn.has
 local ok, err = xpcall(function()
   local instructions = require("buoy.instructions")
   local hook_command = instructions.hook_command()
+  local post_tool_hook_command = instructions.post_tool_hook_command()
   local notifications = {}
   local resolution_attempts = 0
   package.loaded["buoy.codex"] = {
@@ -49,8 +50,8 @@ local ok, err = xpcall(function()
   package.loaded["buoy.codex"] = original_codex
   vim.notify = original_notify
   eq({
-    instructions.codex_argv("codex", nil, hook_command),
-  }, launches, "degraded Codex launch preserves the prompt hook without private CLI guidance")
+    instructions.codex_argv("codex", nil, hook_command, post_tool_hook_command),
+  }, launches, "degraded Codex launch preserves both hooks without private CLI guidance")
   eq(1, resolution_attempts, "Codex configuration resolution is attempted exactly once")
   eq(1, #notifications, "fallback warns")
   truthy(
@@ -72,7 +73,8 @@ local ok, err = xpcall(function()
     instructions.codex_argv(
       "codex",
       instructions.append_instructions("existing guidance", instructions.neovim_instructions()),
-      hook_command
+      hook_command,
+      post_tool_hook_command
     ),
   }, resolved_launches, "resolved Codex launch preserves effective guidance and attaches Buoy")
 
@@ -82,9 +84,29 @@ local ok, err = xpcall(function()
   end)
   eq(1, #claude_launches, "Claude launches exactly once")
   eq(
-    instructions.claude_argv("claude", instructions.neovim_instructions(), hook_command),
+    instructions.claude_argv(
+      "claude",
+      instructions.neovim_instructions(),
+      hook_command,
+      post_tool_hook_command
+    ),
     claude_launches[1],
     "Claude launch uses the complete inline argv"
+  )
+
+  local context = require("buoy").config.context
+  local expose_editor_context = context.expose_editor_context
+  context.expose_editor_context = false
+  local no_context_instructions = instructions.neovim_instructions(context)
+  local no_context_launches = {}
+  require("buoy.launcher").resolve("claude", "claude", "/cwd", function(argv)
+    no_context_launches[#no_context_launches + 1] = argv
+  end)
+  context.expose_editor_context = expose_editor_context
+  eq(
+    { instructions.claude_argv("claude", no_context_instructions, nil, nil) },
+    no_context_launches,
+    "disabled editor context omits both lifecycle hooks"
   )
 
   notifications = {}

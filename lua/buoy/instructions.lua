@@ -111,6 +111,10 @@ function M.hook_command()
   return headless_script_command("context_hook.lua")
 end
 
+function M.post_tool_hook_command()
+  return headless_script_command("checktime_hook.lua")
+end
+
 -- Render a TOML basic string. vim.json.encode() is the wrong boundary here:
 -- Codex parses the value as TOML, whose valid escapes are narrower than JSON's.
 -- TOML basic strings permit only
@@ -133,7 +137,7 @@ local function toml_basic_string(s)
   return '"' .. escaped .. '"'
 end
 
-function M.codex_argv(cmd, developer_instructions, hook_command)
+function M.codex_argv(cmd, developer_instructions, context_hook_command, post_tool_hook_command)
   local argv = { cmd }
   if developer_instructions then
     vim.list_extend(argv, {
@@ -143,30 +147,43 @@ function M.codex_argv(cmd, developer_instructions, hook_command)
   end
   -- The structure is hand-written TOML (inline tables); toml_basic_string()
   -- renders the command as a valid TOML basic string on every Neovim version.
-  -- A nil hook_command means the per-prompt context hook is disabled.
-  if hook_command then
+  if context_hook_command then
     vim.list_extend(argv, {
       "-c",
-      'hooks.UserPromptSubmit=[{hooks=[{type="command",command='
-        .. toml_basic_string(hook_command)
+      'hooks.UserPromptSubmit=[{hooks=[{type="command",command=' .. toml_basic_string(
+        context_hook_command
+      ) .. ",timeout=10}]}]",
+    })
+  end
+  if post_tool_hook_command then
+    vim.list_extend(argv, {
+      "-c",
+      'hooks.PostToolUse=[{matcher="Edit|Write",hooks=[{type="command",command='
+        .. toml_basic_string(post_tool_hook_command)
         .. ",timeout=10}]}]",
     })
   end
   return argv
 end
 
-function M.claude_argv(cmd, system_instructions, hook_command)
+function M.claude_argv(cmd, system_instructions, context_hook_command, post_tool_hook_command)
   local argv = { cmd, "--append-system-prompt", system_instructions }
-  -- A nil hook_command means the per-prompt context hook is disabled.
-  if hook_command then
-    local settings = {
-      hooks = {
-        UserPromptSubmit = {
-          { hooks = { { type = "command", command = hook_command, timeout = 10 } } },
-        },
+  local hooks = {}
+  if context_hook_command then
+    hooks.UserPromptSubmit = {
+      { hooks = { { type = "command", command = context_hook_command, timeout = 10 } } },
+    }
+  end
+  if post_tool_hook_command then
+    hooks.PostToolUse = {
+      {
+        matcher = "Edit|Write",
+        hooks = { { type = "command", command = post_tool_hook_command, timeout = 10 } },
       },
     }
-    vim.list_extend(argv, { "--settings", vim.json.encode(settings) })
+  end
+  if next(hooks) then
+    vim.list_extend(argv, { "--settings", vim.json.encode({ hooks = hooks }) })
   end
   return argv
 end

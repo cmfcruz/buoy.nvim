@@ -23,6 +23,9 @@ every prompt.
 - **Context on every prompt.** A prompt hook automatically attaches the current
   file, cursor, visual selection, and open buffers to what you send — no tool
   call, no extra round trip.
+- **Buffers follow agent edits.** After a native `Edit` or `Write` tool call,
+  buoy checks for external file changes so clean buffers refresh without
+  overwriting unsaved edits.
 - **The agent reads back.** buoy's private CLI lets the agent pull targeted
   buffer ranges and diagnostics, or move your cursor to a resolved location,
   mid-turn.
@@ -62,8 +65,8 @@ Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
 opens beside the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
 preferring Claude Code; no config file required.)
 
-On Windows, the terminal UI works normally, but buoy does not attach the POSIX
-prompt hook or live editor CLI. Buoy warns once when the agent starts.
+On Windows, the terminal UI works normally, but buoy does not attach its POSIX
+bridge hooks or live editor CLI. Buoy warns once when the agent starts.
 
 To update buoy later, pull the clone:
 
@@ -73,7 +76,7 @@ git -C ~/.local/share/nvim/site/pack/buoy/start/buoy.nvim pull
 
 On Linux and macOS, the agent's view of your live editor state needs no extra
 setup — it is configured at launch; see
-[Per-prompt context enrichment](#per-prompt-context-enrichment) and
+[Automatic editor hooks](#automatic-editor-hooks) and
 [Live editor bridge](#live-editor-bridge) for how it works.
 
 ## Configuration
@@ -100,7 +103,8 @@ require("buoy").setup({
   context = {
     expose_buffers = true,        -- let the agent read live buffer contents (get_buffer_range)
     expose_diagnostics = true,    -- let the agent read buffer diagnostics (get_diagnostics)
-    expose_editor_context = true, -- attach the per-prompt editor snapshot + selection handoff
+    expose_editor_context = true, -- prompt snapshot + selection handoff
+                                  -- and post-tool buffer refresh
   },
 })
 ```
@@ -159,17 +163,17 @@ require("buoy").setup({
   agent-facing surfaces, all enabled by default. Set `expose_buffers = false` to
   disable `get_buffer_range` (live buffer contents), `expose_diagnostics = false`
   to disable `get_diagnostics`, and `expose_editor_context = false` to drop the
-  per-prompt editor snapshot and the visual-selection handoff. A disabled
-  capability is both omitted from the agent's instructions and refused if called.
-  Turn all three off to disable buoy's buffer-content, diagnostic, and per-prompt
-  context surfaces. This is a capability/privacy control, not a security boundary
-  — a hosted agent can still read files through its own tools. Cursor navigation
-  (`set_cursor_position`) is always available; when invoked, it returns navigation
-  metadata including the destination's absolute path and final cursor position,
-  but not file contents.
+  per-prompt editor snapshot, visual-selection handoff, and post-tool buffer
+  refresh. A disabled read capability is both omitted from the agent's
+  instructions and refused if called. Turn all three off to disable buoy's
+  buffer-content, diagnostic, and automatic editor-hook surfaces. This is a
+  capability/privacy control, not a security boundary — a hosted agent can still
+  read files through its own tools. Cursor navigation (`set_cursor_position`) is
+  always available; when invoked, it returns navigation metadata including the
+  destination's absolute path and final cursor position, but not file contents.
 - Every key is optional; anything you omit keeps its default.
 
-## Per-prompt context enrichment
+## Automatic editor hooks
 
 On Linux and macOS, buoy registers a `UserPromptSubmit` hook
 (`bridge/context_hook.lua`) with both agents: before the model sees each prompt,
@@ -178,13 +182,21 @@ cursor, visual selection, and open buffers — which the agent attaches as
 context. Enrichment is deterministic (there is no tool call for the model to
 skip) and costs no extra inference round trip.
 
-For Claude Code the hook rides in an inline `--settings` JSON. For Codex it is
-a session-scoped `-c hooks.UserPromptSubmit=...` override. Codex requires you
-to review and trust the hook definition before it can run, then remembers that
-trust while the definition stays unchanged.
+Buoy also registers a `PostToolUse` hook (`bridge/checktime_hook.lua`) for the
+agents' native `Edit` and `Write` tools. After either tool completes, the hook
+runs `:checktime` in the launching Neovim so clean, externally changed buffers
+refresh under Neovim's normal `autoread` behavior. Buffers with unsaved edits
+are never overwritten; Neovim keeps its normal warning and reload-choice
+behavior. Writes performed through shell commands do not trigger this hook.
 
-If the hook cannot reach your Neovim it prints nothing and never blocks the
-prompt.
+For Claude Code the hooks ride in an inline `--settings` JSON. For Codex they
+are session-scoped `-c hooks.UserPromptSubmit=...` and
+`-c hooks.PostToolUse=...` overrides. Codex requires you to review and trust
+each hook definition before it can run, then remembers that trust while the
+definitions stay unchanged.
+
+If either hook cannot reach your Neovim, it silently does nothing and never
+blocks the agent.
 
 ## Live editor bridge
 
@@ -193,13 +205,14 @@ prompt.
 │  editing buffers              │  › what does this      │
 │  autocmds cache:              │    selection do?       │
 │   file / cursor / selection   │                        │
-│        ▲                      │  [context_hook enriches│
-│        │ msgpack-RPC          │   every prompt with the│
-│  ┌─────┴──────────────┐       │   private agent CLI    │
-│  │ context_hook /     │       │   widen context        │
-│  │ agent_cli          │◄──────┤   mid-turn]            │
+│        ▲                      │                        │
+│        │ Neovim RPC           │                        │
+│  ┌─────┴──────────────┐       │                        │
+│  │ context_hook       │◄──────┤  snapshot each prompt  │
+│  │ checktime_hook     │◄──────┤  PostToolUse Edit/Write│
+│  │ agent_cli          │◄──────┤  on-demand operations  │
 │  └────────────────────┘       │                        │
-│      (spawned by the agent)   │                        │
+│  (spawned by the agent)       │                        │
 └───────────────────────────────┴────────────────────────┘
 ```
 
@@ -222,9 +235,9 @@ configuration precedence.
 If the Codex configuration cannot be resolved within two seconds, buoy shows a
 warning and launches Codex without a developer-instructions override. This
 preserves the instructions Codex would normally load instead of replacing them
-with incomplete context. The prompt hook remains active, but on-demand live
-operations are unavailable for that session; buoy does not retry configuration
-resolution.
+with incomplete context. Both automatic hooks remain active, but on-demand
+live operations are unavailable for that session; buoy does not retry
+configuration resolution.
 
 ## Usage
 
@@ -240,10 +253,12 @@ resolution.
 
 ## Limitations / roadmap
 
-- On Linux and macOS, editor context refreshes when you submit a prompt and
-  when the agent invokes the private CLI; buoy does not stream
-  selection-changed events continuously.
-- Windows supports the terminal UI but not the prompt hook or live editor CLI.
+- On Linux and macOS, editor context refreshes when you submit a prompt,
+  externally changed buffers are checked after native `Edit` and `Write` tool
+  calls, and the private CLI reads live state on demand. Shell-based writes do
+  not trigger post-tool refresh, and buoy does not stream selection-changed
+  events continuously.
+- Windows supports the terminal UI but not the bridge hooks or live editor CLI.
 - `open_diff` / in-editor approval is intentionally out of scope: the
   official TUI already renders diffs and approvals, which is the point.
 
