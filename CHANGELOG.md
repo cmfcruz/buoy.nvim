@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.1.1](https://github.com/cmfcruz/buoy.nvim/compare/v3.1.0...v3.1.1) (2026-08-27)
+
+
+### Bug Fixes
+
+* map shifted function key aliases ([#27](https://github.com/cmfcruz/buoy.nvim/issues/27)) ([3cc595b](https://github.com/cmfcruz/buoy.nvim/commit/3cc595bda818c319681e81ee3a69df58a17a3383)), closes [#26](https://github.com/cmfcruz/buoy.nvim/issues/26)
+
 ## [3.1.0](https://github.com/cmfcruz/buoy.nvim/compare/v3.0.0...v3.1.0) (2026-08-19)
 
 
