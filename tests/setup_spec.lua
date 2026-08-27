@@ -122,7 +122,8 @@ local ok, err = xpcall(function()
   truthy(pcall(buoy.setup, { window = { width = 40 } }), "a valid width completes setup")
   eq(40, buoy.config.window.width, "the valid width is applied")
 
-  -- setup() installs the configured agent keymaps, and `false` installs none.
+  -- setup() installs the configured agent keymaps, including the traditional
+  -- terminfo alias for shifted function keys, and `false` installs none.
   -- Mappings outlive a fresh_buoy(), so clear them before each check.
   local function unmap(lhs)
     pcall(vim.keymap.del, { "n", "x", "t" }, lhs)
@@ -133,18 +134,48 @@ local ok, err = xpcall(function()
 
   unmap("<F2>")
   unmap("<S-F2>")
+  unmap("<F14>")
   buoy = fresh_buoy()
   buoy.setup({ agent = "codex" })
   truthy(not vim.tbl_isempty(mapping("<F2>")), "setup installs the primary keymap")
   truthy(not vim.tbl_isempty(mapping("<S-F2>")), "setup installs the secondary keymap")
+  truthy(not vim.tbl_isempty(mapping("<F14>")), "setup installs the shifted-key alias")
 
   unmap("<F2>")
   unmap("<S-F2>")
+  unmap("<F14>")
+  unmap("<S-F3>")
+  unmap("<F15>")
+  local original_terminal = package.loaded["buoy.terminal"]
+  local secondary_calls = 0
+  package.loaded["buoy.terminal"] = {
+    on_secondary = function()
+      secondary_calls = secondary_calls + 1
+    end,
+  }
+  buoy = fresh_buoy()
+  buoy.setup({ agent = "codex", keymaps = { primary = false, secondary = "<S-F3>" } })
+  truthy(not vim.tbl_isempty(mapping("<S-F3>")), "a shifted function key is installed")
+  truthy(not vim.tbl_isempty(mapping("<F15>")), "its traditional terminfo alias is installed")
+  vim.api.nvim_feedkeys(vim.keycode("<S-F3>"), "mx", false)
+  vim.api.nvim_feedkeys(vim.keycode("<F15>"), "mx", false)
+  eq(2, secondary_calls, "both shifted-key representations invoke the secondary action")
+  package.loaded["buoy.terminal"] = original_terminal
+
+  unmap("<S-F3>")
+  unmap("<F15>")
+  unmap("<F9>")
+  unmap("<F21>")
   buoy = fresh_buoy()
   buoy.setup({ agent = "codex", keymaps = { primary = false, secondary = "<F9>" } })
   truthy(vim.tbl_isempty(mapping("<F2>")), "a false primary installs no mapping")
   truthy(not vim.tbl_isempty(mapping("<F9>")), "a custom secondary key is installed")
+  truthy(vim.tbl_isempty(mapping("<F21>")), "an unshifted function key gains no alias")
   unmap("<F9>")
+
+  buoy = fresh_buoy()
+  buoy.setup({ agent = "codex", keymaps = { primary = false, secondary = false } })
+  truthy(vim.tbl_isempty(mapping("<F14>")), "a false secondary installs no compatibility alias")
 
   vim.notify = original_notify
   vim.fn.executable = original_executable

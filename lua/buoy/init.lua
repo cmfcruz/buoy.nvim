@@ -53,6 +53,18 @@ local function resolve_agent(agent)
   return "claude"
 end
 
+local function shifted_function_key_alias(key)
+  if type(key) ~= "string" then
+    return nil
+  end
+
+  local number = tonumber(key:match("^<[sS]%-[fF](%d+)>$"))
+  if number and number >= 1 and number <= 12 then
+    -- Traditional terminfo names Shift+F1 through Shift+F12 as F13 through F24.
+    return ("<F%d>"):format(number + 12)
+  end
+end
+
 --- Ensure this Neovim instance has an RPC socket for the agent bridge.
 local function ensure_rpc_socket()
   local addr = vim.v.servername
@@ -232,9 +244,19 @@ function M.setup(opts)
   end
 
   if config.keymaps.secondary then
-    vim.keymap.set({ "n", "x", "t" }, config.keymaps.secondary, function()
+    local function on_secondary()
       require("buoy.terminal").on_secondary()
-    end, { desc = "buoy: agent secondary (show/hide in split, focus in float)", silent = true })
+    end
+
+    for _, key in ipairs({
+      config.keymaps.secondary,
+      shifted_function_key_alias(config.keymaps.secondary),
+    }) do
+      vim.keymap.set({ "n", "x", "t" }, key, on_secondary, {
+        desc = "buoy: agent secondary (show/hide in split, focus in float)",
+        silent = true,
+      })
+    end
   end
 
   -- Keep the agent window's layout in step with the editor size: an "auto"

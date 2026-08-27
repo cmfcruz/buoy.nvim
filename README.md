@@ -131,10 +131,14 @@ require("buoy").setup({
     the agent when it's closed.
   - **Secondary — `<S-F2>` (`keymaps.secondary`):** the other action — show/hide
     in a `vsplit`, focus-switch in a `float`.
-  Hiding never kills the agent session. If your terminal emulator doesn't
-  deliver `<S-F2>`, set `keymaps.secondary` to another key; either mapping can
-  also be `false`. `:BuoyToggle` shows or hides the window, while `:Buoy` opens
-  or focuses it.
+  Hiding never kills the agent session. For secondary mappings from `<S-F1>`
+  through `<S-F12>`, buoy also maps the traditional terminfo alias `<F13>`
+  through `<F24>`; for example, `<S-F2>` also listens on `<F14>`. These aliases
+  are global mappings, so they can replace an existing mapping for the same key
+  if buoy is configured later. If pressing Shift+F2 produces no input in Neovim
+  because your OS or terminal reserves it, configure another secondary key.
+  Either mapping can also be `false`. `:BuoyToggle` shows or hides the window,
+  while `:Buoy` opens or focuses it.
 - **Window layout:** `"auto"` (default) chooses a right-side `vsplit` while
   every code window would stay wider than `window.width`, otherwise a `float`
   overlay so your code is never squeezed below the agent's own width. The
