@@ -115,6 +115,10 @@ function M.post_tool_hook_command()
   return headless_script_command("checktime_hook.lua")
 end
 
+function M.pi_extension_path()
+  return plugin_root .. "/bridge/pi_hooks.ts"
+end
+
 -- Render a TOML basic string. vim.json.encode() is the wrong boundary here:
 -- Codex parses the value as TOML, whose valid escapes are narrower than JSON's.
 -- TOML basic strings permit only
@@ -162,6 +166,14 @@ function M.codex_argv(cmd, developer_instructions, context_hook_command, post_to
         .. toml_basic_string(post_tool_hook_command)
         .. ",timeout=10}]}]",
     })
+  end
+  return argv
+end
+
+function M.pi_argv(cmd, system_instructions, context_hook_command, post_tool_hook_command)
+  local argv = { cmd, "--append-system-prompt", system_instructions }
+  if context_hook_command or post_tool_hook_command then
+    vim.list_extend(argv, { "--extension", M.pi_extension_path() })
   end
   return argv
 end

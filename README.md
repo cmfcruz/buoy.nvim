@@ -18,7 +18,7 @@ every prompt.
   <img src="docs/demo.gif" alt="buoy.nvim docked beside a Neovim buffer with an agent mid-turn" width="900">
 </p>
 
-- **The official agent TUI, docked in Neovim.** Run Claude Code or Codex in a
+- **The official agent TUI, docked in Neovim.** Run Claude Code, Codex, or Pi in a
   split or float that stays anchored beside your code — no chat UI to maintain.
 - **Context on every prompt.** A prompt hook automatically attaches the current
   file, cursor, visual selection, and open buffers to what you send — no tool
@@ -36,7 +36,7 @@ every prompt.
 ## Requirements
 
 - Neovim 0.11+ (required for exact visual-selection capture)
-- The Codex and/or Claude Code CLI on your `$PATH`
+- The Claude Code, Codex, and/or Pi CLI on your `$PATH`
 
 ## Install
 
@@ -63,7 +63,7 @@ git clone https://github.com/cmfcruz/buoy.nvim `
 
 Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
 opens beside the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
-preferring Claude Code; no config file required.)
+preferring Claude Code, then Codex, then Pi; no config file required.)
 
 On Windows, the terminal UI works normally, but buoy does not attach its POSIX
 bridge hooks or live editor CLI. Buoy warns once when the agent starts.
@@ -82,13 +82,13 @@ setup — it is configured at launch; see
 ## Configuration
 
 buoy works with zero configuration: it auto-detects your agent CLI (Claude
-Code first, then Codex) and maps `<F2>`. Call `setup()` only to override a
+Code first, then Codex, then Pi) and maps `<F2>`. Call `setup()` only to override a
 default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
 `~/AppData/Local/nvim/init.lua` on Windows):
 
 ```lua
 require("buoy").setup({
-  agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex"
+  agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex" | "pi"
   keymaps = {
     primary = "<F2>",         -- focus in a vsplit, show/hide in a float; false to disable
     secondary = "<S-F2>",     -- show/hide in a vsplit, focus in a float; false to disable
@@ -109,10 +109,10 @@ require("buoy").setup({
 })
 ```
 
-- **Switch to Codex:** set `agent = "codex"`. (With the default `"auto"`,
-  buoy uses Codex anyway if it's the only CLI on your `$PATH`.)
+- **Switch agents:** set `agent = "codex"` or `agent = "pi"`. (With the default
+  `"auto"`, buoy uses Pi too if it's the only supported CLI on your `$PATH`.)
 - **Override per session:** set the `BUOY_AGENT` environment variable
-  (e.g. `BUOY_AGENT=codex nvim`) — it takes precedence over the `agent`
+  (e.g. `BUOY_AGENT=pi nvim`) — it takes precedence over the `agent`
   configured in `setup()`.
 - **Config applies at startup:** buoy initializes once per Neovim session —
   the first `setup()` (or the zero-config defaults, shortly after startup)
@@ -179,8 +179,8 @@ require("buoy").setup({
 
 ## Automatic editor hooks
 
-On Linux and macOS, buoy registers a `UserPromptSubmit` hook
-(`bridge/context_hook.lua`) with both agents: before the model sees each prompt,
+On Linux and macOS, buoy registers a prompt hook (`bridge/context_hook.lua`)
+with supported agents: before the model sees each prompt,
 the hook prints a focused snapshot of your editor state — cwd, current file,
 cursor, visual selection, and open buffers — which the agent attaches as
 context. Enrichment is deterministic (there is no tool call for the model to
@@ -193,11 +193,16 @@ refresh under Neovim's normal `autoread` behavior. Buffers with unsaved edits
 are never overwritten; Neovim keeps its normal warning and reload-choice
 behavior. Writes performed through shell commands do not trigger this hook.
 
-For Claude Code the hooks ride in an inline `--settings` JSON. For Codex they
-are session-scoped `-c hooks.UserPromptSubmit=...` and
-`-c hooks.PostToolUse=...` overrides. Codex requires you to review and trust
-each hook definition before it can run, then remembers that trust while the
-definitions stay unchanged.
+Hook wiring is agent-specific:
+
+- **Claude Code:** hooks ride in an inline `--settings` JSON.
+- **Codex:** hooks are session-scoped `-c hooks.UserPromptSubmit=...` and
+  `-c hooks.PostToolUse=...` overrides. Codex requires you to review and trust
+  each hook definition before it can run, then remembers that trust while the
+  definitions stay unchanged.
+- **Pi:** buoy loads a bundled `--extension` that injects the prompt snapshot
+  from `before_agent_start` and refreshes buffers from `tool_result` after Pi's
+  native `edit` or `write` tools.
 
 If either hook cannot reach your Neovim, it silently does nothing and never
 blocks the agent.

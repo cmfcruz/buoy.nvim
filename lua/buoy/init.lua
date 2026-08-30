@@ -1,6 +1,6 @@
 --- buoy.nvim
 --- Floats or docks — stays anchored to the code.
---- An agent's official TUI (Codex / Claude Code) in a float or split, plus
+--- An agent's official TUI (Codex / Claude Code / Pi) in a float or split, plus
 --- live editor context and navigation through a private agent CLI.
 
 if vim.fn.has("nvim-0.11") == 0 then
@@ -10,7 +10,7 @@ end
 local M = {}
 
 M.config = {
-  agent = "auto", -- "auto" | "claude" | "codex"; auto prefers an installed CLI (Claude Code first)
+  agent = "auto", -- "auto" | "claude" | "codex" | "pi"; auto prefers an installed CLI (Claude Code first)
   cmd = nil, -- override the agent's default binary (optional)
   window = {
     style = "auto", -- "auto" | "vsplit" | "float"; auto splits when the code stays wider than width, else floats
@@ -34,12 +34,13 @@ M.config = {
 local AGENTS = {
   codex = { cmd = "codex", title = " Codex " },
   claude = { cmd = "claude", title = " Claude Code " },
+  pi = { cmd = "pi", title = " Pi " },
 }
 
 --- Resolve the `"auto"` agent to a concrete one: prefer Claude Code, then
---- Codex, by what's actually on `$PATH`. Falls back to Claude Code to give
---- `open()` a concrete missing command to report if neither CLI is
---- installed. An explicit `agent = "codex"|"claude"` skips this.
+--- Codex, then Pi, by what's actually on `$PATH`. Falls back to Claude Code to
+--- give `open()` a concrete missing command to report if no supported CLI is
+--- installed. An explicit `agent = "codex"|"claude"|"pi"` skips this.
 local function resolve_agent(agent)
   if agent ~= "auto" then
     return agent
@@ -49,6 +50,9 @@ local function resolve_agent(agent)
   end
   if vim.fn.executable("codex") == 1 then
     return "codex"
+  end
+  if vim.fn.executable("pi") == 1 then
+    return "pi"
   end
   return "claude"
 end
@@ -209,7 +213,7 @@ function M.setup(opts)
     )
   end
 
-  -- $BUOY_AGENT overrides the configured agent (e.g. BUOY_AGENT=codex nvim).
+  -- $BUOY_AGENT overrides the configured agent (e.g. BUOY_AGENT=pi nvim).
   local env_agent = vim.env.BUOY_AGENT
   if env_agent and env_agent ~= "" then
     config.agent = env_agent
@@ -219,7 +223,7 @@ function M.setup(opts)
   local preset = AGENTS[config.agent]
   if not preset then
     error(
-      ("buoy: unknown agent %q (expected 'auto', 'codex', or 'claude')"):format(
+      ("buoy: unknown agent %q (expected 'auto', 'codex', 'claude', or 'pi')"):format(
         tostring(config.agent)
       )
     )

@@ -2,8 +2,9 @@
 --- nvim --headless -u NONE -i NONE -l context_hook.lua
 ---
 --- Prints the editor-context snapshot from the user's running Neovim to
---- stdout; Claude Code and Codex attach hook stdout as per-prompt context,
---- giving the model fresh editor state without spending a tool call.
+--- stdout; Claude Code and Codex attach hook stdout directly, while the Pi
+--- extension injects it as per-prompt context, giving the model fresh editor
+--- state without spending a tool call.
 ---
 --- The command line registered with the agent must stay stable across
 --- sessions (Codex persists hook trust keyed on it), so the socket is never

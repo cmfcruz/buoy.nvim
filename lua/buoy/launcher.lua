@@ -31,6 +31,10 @@ function M.resolve(agent, cmd, cwd, callback)
     )
     return
   end
+  if agent == "pi" then
+    callback(instructions.pi_argv(cmd, neovim_instructions, hook_command, post_tool_hook_command))
+    return
+  end
 
   require("buoy.codex").resolve(cmd, cwd, function(err, existing)
     if err then
