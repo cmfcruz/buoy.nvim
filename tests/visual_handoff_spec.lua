@@ -47,7 +47,7 @@ local ok, err = xpcall(function()
     end,
   }
 
-  require("buoy").setup({ agent = "claude", cmd = "sleep" })
+  require("buoy").setup({ agent = "claude", cmd = "sleep", startup = { open = false } })
 
   local file = temp .. "/main.txt"
   vim.fn.writefile({ "line 1", "line 2", "line 3", "line 4" }, file)
@@ -60,8 +60,14 @@ local ok, err = xpcall(function()
   -- Open the agent terminal, then focus back to the editor so the window is
   -- open but unfocused — the state where the visual handoff used to leak.
   terminal.open()
-  eq("terminal", vim.bo.buftype, "open() focuses the agent terminal")
   local term_buf = vim.api.nvim_get_current_buf()
+  truthy(
+    vim.wait(100, function()
+      return vim.bo[term_buf].buftype == "terminal"
+    end),
+    "open() starts the agent terminal"
+  )
+  eq("terminal", vim.bo.buftype, "open() focuses the agent terminal")
   terminal.focus_toggle()
   eq(source_buf, vim.api.nvim_get_current_buf(), "focus_toggle returns to the editor")
 

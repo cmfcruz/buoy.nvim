@@ -172,6 +172,16 @@ local function current_layout()
   return resolve_style(cfg.style, compute_width(cfg))
 end
 
+--- Whether the agent window is currently visible.
+function M.is_visible()
+  return win_valid() and true or false
+end
+
+--- The concrete layout currently shown, or the layout a hidden agent would use.
+function M.current_layout()
+  return current_layout()
+end
+
 local function open_window()
   local plugin = require("buoy")
   local cfg = plugin.config.window
@@ -261,7 +271,8 @@ local function start_job()
     plugin.config.agent,
     plugin.config.cmd,
     vim.fn.getcwd(),
-    start_term
+    -- Defer every agent so callers can restore focus before start_term considers insert mode.
+    vim.schedule_wrap(start_term)
   )
 end
 
@@ -310,9 +321,8 @@ function M.open()
 
   if fresh then
     state.buf = vim.api.nvim_create_buf(false, false)
-    -- launcher.resolve may resolve asynchronously (Codex spawns app-server and
-    -- round-trips its config before start_term runs). Lock the scratch buffer so
-    -- keystrokes during that window cannot mark it modified and break termopen.
+    -- Agent startup is asynchronous. Lock the scratch buffer so keystrokes while
+    -- it resolves cannot mark it modified and break termopen.
     vim.bo[state.buf].modifiable = false
   end
 

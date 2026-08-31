@@ -83,7 +83,12 @@ local ok, err = xpcall(function()
   vim.o.columns = 220
   terminal.open()
   local buf = vim.api.nvim_get_current_buf()
-  truthy(vim.bo[buf].buftype == "terminal", "opening starts a terminal session")
+  truthy(
+    vim.wait(100, function()
+      return vim.bo[buf].buftype == "terminal"
+    end),
+    "opening starts a terminal session"
+  )
   eq("vsplit", agent_layout(buf), "a wide editor opens the agent as a vsplit")
 
   -- The resolver must be stable on both sides of its exact boundary. Its input
@@ -238,11 +243,18 @@ local ok, err = xpcall(function()
     title = " Test ",
     window = { style = "auto", width = 80, border = "rounded", stay = true },
     keymaps = { primary = false, secondary = false },
+    startup = { open = false },
   })
 
   local term = require("buoy.terminal")
   term.open()
   local tabenter_buf = vim.api.nvim_get_current_buf()
+  truthy(
+    vim.wait(100, function()
+      return vim.bo[tabenter_buf].buftype == "terminal"
+    end),
+    "TabEnter setup starts a terminal session"
+  )
   eq("vsplit", agent_layout(tabenter_buf), "TabEnter setup: a wide editor opens a vsplit")
 
   vim.cmd.tabnew()

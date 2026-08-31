@@ -1,5 +1,6 @@
 local root = vim.fn.getcwd()
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
+vim.opt.runtimepath:prepend(root)
 
 local function fail(message)
   error(message, 2)
@@ -12,6 +13,11 @@ local function truthy(value, label)
 end
 
 local ok, err = xpcall(function()
+  local original_schedule = vim.schedule
+  -- This spec exercises commands and terminal lifecycle directly; keep the new
+  -- automatic-open callback from racing those manual operations.
+  vim.schedule = function() end
+
   local original_serverstart = vim.fn.serverstart
   vim.fn.serverstart = function()
     return "/tmp/buoy-startup-spec.sock"
@@ -75,6 +81,7 @@ local ok, err = xpcall(function()
 
   package.loaded["buoy.context"] = nil
   package.loaded["buoy.terminal"] = nil
+  vim.schedule = original_schedule
 
   -- Hiding and reopening keeps the live terminal session even if the command
   -- is no longer available for starting a new one.
@@ -109,9 +116,17 @@ local ok, err = xpcall(function()
   end
 
   local terminal = require("buoy.terminal")
+  local editor_win = vim.api.nvim_get_current_win()
   terminal.open()
   local terminal_buf = vim.api.nvim_get_current_buf()
-  truthy(vim.bo[terminal_buf].buftype == "terminal", "opening starts a terminal session")
+  vim.api.nvim_set_current_win(editor_win)
+  truthy(
+    vim.wait(100, function()
+      return vim.bo[terminal_buf].buftype == "terminal"
+    end),
+    "opening starts a terminal session asynchronously"
+  )
+  truthy(vim.fn.mode() == "n", "asynchronous startup leaves the restored editor in normal mode")
   terminal.hide()
 
   local original_executable = vim.fn.executable
@@ -150,9 +165,13 @@ local ok, err = xpcall(function()
   package.loaded["buoy"].config.agent = "pi"
   package.loaded["buoy"].config.context.expose_editor_context = false
   terminal.open()
+  local fresh_terminal_buf = vim.api.nvim_get_current_buf()
+  truthy(fresh_terminal_buf ~= terminal_buf, "opening after terminal exit starts a fresh session")
   truthy(
-    vim.api.nvim_get_current_buf() ~= terminal_buf,
-    "opening after terminal exit starts a fresh session"
+    vim.wait(100, function()
+      return vim.bo[fresh_terminal_buf].buftype == "terminal"
+    end),
+    "fresh terminal startup completes asynchronously"
   )
   truthy(
     terminal_env.BUOY_PI_INSTRUCTIONS:find("## Neovim context", 1, true),

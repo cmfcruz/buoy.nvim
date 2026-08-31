@@ -1,5 +1,6 @@
 local root = vim.fn.getcwd()
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
+vim.opt.runtimepath:prepend(root)
 
 local function fail(message)
   error(message, 2)
@@ -23,6 +24,11 @@ local function fresh_buoy()
 end
 
 local ok, err = xpcall(function()
+  local original_schedule = vim.schedule
+  -- Keep automatic startup callbacks deterministic in this configuration-only
+  -- spec; startup behavior has dedicated coverage in auto_open_spec.lua.
+  vim.schedule = function() end
+
   local original_has = vim.fn.has
   vim.fn.has = function(feature)
     if feature == "nvim-0.11" then
@@ -62,6 +68,8 @@ local ok, err = xpcall(function()
   eq(" Codex ", buoy.config.title, "title derives from the selected preset")
   eq(100, buoy.config.window.width, "partial window options apply over defaults")
   eq("rounded", buoy.config.window.border, "unspecified options keep their defaults")
+  eq(true, buoy.config.startup.open, "startup opens by default")
+  eq(true, buoy.config.startup.message, "the startup reminder defaults on")
 
   -- Later setup calls cannot change a running Neovim session.
   buoy.setup({ agent = "claude" })
@@ -117,6 +125,23 @@ local ok, err = xpcall(function()
   buoy.ensure_setup()
   truthy(buoy._did_setup, "automatic startup applies after a rejected config")
   eq("claude", buoy.config.agent, "automatic startup resolves the deterministic fallback")
+
+  -- Invalid startup switches fail before the one-shot setup lock is set, so a
+  -- corrected call can still apply.
+  buoy = fresh_buoy()
+  truthy(
+    not pcall(buoy.setup, { startup = { open = "yes" } }),
+    "a non-boolean startup.open is rejected"
+  )
+  truthy(not buoy._did_setup, "invalid startup.open leaves setup unlocked")
+  truthy(
+    not pcall(buoy.setup, { startup = { message = 1 } }),
+    "a non-boolean startup.message is rejected"
+  )
+  truthy(not buoy._did_setup, "invalid startup.message leaves setup unlocked")
+  buoy.setup({ startup = { open = false, message = false } })
+  eq(false, buoy.config.startup.open, "a corrected startup.open is applied")
+  eq(false, buoy.config.startup.message, "a corrected startup.message is applied")
 
   -- window.width is a fixed column count: it must be a whole number of at least
   -- 40, so a too-small integer and a non-integer both fail while a valid integer
@@ -191,6 +216,7 @@ local ok, err = xpcall(function()
   vim.notify = original_notify
   vim.fn.executable = original_executable
   vim.fn.serverstart = original_serverstart
+  vim.schedule = original_schedule
 end, debug.traceback)
 
 if not ok then

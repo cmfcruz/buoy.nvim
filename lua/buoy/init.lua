@@ -24,6 +24,10 @@ M.config = {
     primary = "<F2>", -- focus in a vsplit, show/hide in a float; false to disable
     secondary = "<S-F2>", -- show/hide in a vsplit, focus in a float; false to disable
   },
+  startup = {
+    open = true, -- open the agent automatically after startup
+    message = true, -- show the one-shot layout-aware key reminder
+  },
   -- Gated agent-facing surfaces; keys and defaults live in buoy.capabilities so
   -- no module re-declares them (see that file for per-key descriptions).
   context = vim.deepcopy(require("buoy.capabilities").defaults),
@@ -201,6 +205,14 @@ function M.setup(opts)
 
   local config = vim.tbl_deep_extend("force", M.config, opts or {})
 
+  if
+    type(config.startup) ~= "table"
+    or type(config.startup.open) ~= "boolean"
+    or type(config.startup.message) ~= "boolean"
+  then
+    error("buoy: startup.open and startup.message must be booleans")
+  end
+
   -- window.width is a fixed column count: require a whole number, and reject
   -- anything below this floor, where the agent window renders as an unusable
   -- sliver.
@@ -243,12 +255,14 @@ function M.setup(opts)
 
   if config.keymaps.primary then
     vim.keymap.set({ "n", "x", "t" }, config.keymaps.primary, function()
+      require("buoy.startup").dismiss_reminder()
       require("buoy.terminal").on_primary()
     end, { desc = "buoy: agent primary (focus in split, show/hide in float)", silent = true })
   end
 
   if config.keymaps.secondary then
     local function on_secondary()
+      require("buoy.startup").dismiss_reminder()
       require("buoy.terminal").on_secondary()
     end
 
@@ -284,6 +298,10 @@ function M.setup(opts)
     end,
     desc = "buoy: re-evaluate the agent layout when returning to its tab",
   })
+
+  if config.startup.open then
+    require("buoy.startup").schedule()
+  end
 end
 
 --- Apply zero-configuration defaults if explicit setup has not run yet.

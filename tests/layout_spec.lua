@@ -86,7 +86,12 @@ local ok, err = xpcall(function()
   vim.cmd("vsplit")
   terminal.open()
   local buf = vim.api.nvim_get_current_buf()
-  truthy(vim.bo[buf].buftype == "terminal", "opening starts a terminal session")
+  truthy(
+    vim.wait(100, function()
+      return vim.bo[buf].buftype == "terminal"
+    end),
+    "opening starts a terminal session"
+  )
   eq("float", agent_layout(buf), "side-by-side code windows make auto choose a float")
 
   -- Stacked code windows still span the editor width and can share it with the

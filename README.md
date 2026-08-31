@@ -61,9 +61,11 @@ git clone https://github.com/cmfcruz/buoy.nvim `
   "$env:LOCALAPPDATA\nvim-data\site\pack\buoy\start\buoy.nvim"
 ```
 
-Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
-opens beside the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
-preferring Claude Code, then Codex, then Pi; no config file required.)
+Start Neovim and buoy opens the selected agent's TUI automatically while
+leaving your editor, file explorer, dashboard, or other startup window focused.
+A startup reminder shows the layout-aware shortcuts (by default `<F2>` and
+`<S-F2>`). Buoy auto-detects which agent CLI is on your `$PATH`, preferring
+Claude Code, then Codex, then Pi; no config file is required.
 
 On Windows, the terminal UI works normally, but buoy does not attach its POSIX
 bridge hooks or live editor CLI. Buoy warns once when the agent starts.
@@ -82,8 +84,8 @@ setup — it is configured at launch; see
 ## Configuration
 
 buoy works with zero configuration: it auto-detects your agent CLI (Claude
-Code first, then Codex, then Pi) and maps `<F2>`. Call `setup()` only to override a
-default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
+Code first, then Codex, then Pi), opens it after startup, and maps `<F2>`. Call
+`setup()` only to override a default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
 `~/AppData/Local/nvim/init.lua` on Windows):
 
 ```lua
@@ -92,6 +94,10 @@ require("buoy").setup({
   keymaps = {
     primary = "<F2>",         -- focus in a vsplit, show/hide in a float; false to disable
     secondary = "<S-F2>",     -- show/hide in a vsplit, focus in a float; false to disable
+  },
+  startup = {
+    open = true,              -- false restores manual-open startup behavior
+    message = true,           -- false suppresses the startup shortcut reminder
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
   window = {
@@ -109,6 +115,14 @@ require("buoy").setup({
 })
 ```
 
+- **Startup behavior:** buoy opens one agent window automatically and then
+  returns focus to the startup window that was active before it opened. Set
+  `startup.open = false` to launch only on demand, or
+  `startup.message = false` to keep automatic opening without the startup
+  reminder. The reminder uses your configured key notation, omits disabled
+  mappings, and describes the actions for the split or float that actually
+  opened. It is dismissed by the first configured Buoy keypress or replaced
+  naturally by the next command or message.
 - **Switch agents:** set `agent = "codex"` or `agent = "pi"`. (With the default
   `"auto"`, buoy uses Pi too if it's the only supported CLI on your `$PATH`.)
 - **Override per session:** set the `BUOY_AGENT` environment variable
