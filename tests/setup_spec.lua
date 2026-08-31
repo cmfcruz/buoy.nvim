@@ -43,7 +43,7 @@ local ok, err = xpcall(function()
     return "/tmp/buoy-setup-spec.sock"
   end
   local original_executable = vim.fn.executable
-  local executables = { claude = 1, codex = 1 }
+  local executables = { claude = 1, codex = 1, pi = 1 }
   vim.fn.executable = function(cmd)
     return executables[cmd] or 0
   end
@@ -81,14 +81,19 @@ local ok, err = xpcall(function()
   eq("claude", buoy.config.agent, "explicit setup cannot replace zero-config setup")
   eq(2, #notices, "reconfiguring zero-config setup notifies the user")
 
-  -- Automatic setup falls back to Codex, then to Claude's command when neither
-  -- CLI exists so opening the window can report the missing executable.
+  -- Automatic setup falls back to Codex, then Pi, then to Claude's command when
+  -- no supported CLI exists so opening the window can report the missing executable.
   executables.claude = 0
   buoy = fresh_buoy()
   buoy.ensure_setup()
   eq("codex", buoy.config.agent, "automatic setup falls back to Codex")
 
   executables.codex = 0
+  buoy = fresh_buoy()
+  buoy.ensure_setup()
+  eq("pi", buoy.config.agent, "automatic setup falls back to Pi")
+
+  executables.pi = 0
   buoy = fresh_buoy()
   buoy.ensure_setup()
   eq("claude", buoy.config.agent, "automatic setup falls back to the Claude command")
@@ -98,6 +103,12 @@ local ok, err = xpcall(function()
   buoy.setup({ agent = "claude", cmd = "claude-dev" })
   eq("claude-dev", buoy.config.cmd, "explicit cmd overrides the preset")
   eq(" Claude Code ", buoy.config.title, "title still derives from the preset")
+
+  buoy = fresh_buoy()
+  buoy.setup({ agent = "pi" })
+  eq("pi", buoy.config.agent, "Pi can be selected explicitly")
+  eq("pi", buoy.config.cmd, "Pi cmd derives from the selected preset")
+  eq(" Pi ", buoy.config.title, "Pi title derives from the selected preset")
 
   -- A rejected config leaves automatic startup free to apply valid defaults.
   buoy = fresh_buoy()

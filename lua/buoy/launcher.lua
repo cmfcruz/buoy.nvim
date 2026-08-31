@@ -15,6 +15,11 @@ function M.resolve(agent, cmd, cwd, callback)
   end
 
   local instructions = require("buoy.instructions")
+  if agent == "pi" then
+    callback(instructions.pi_argv(cmd))
+    return
+  end
+
   local context = require("buoy").config.context
   -- config.context already carries exactly the keys neovim_instructions reads,
   -- so pass it straight through instead of rebuilding the table.
@@ -31,7 +36,6 @@ function M.resolve(agent, cmd, cwd, callback)
     )
     return
   end
-
   require("buoy.codex").resolve(cmd, cwd, function(err, existing)
     if err then
       vim.notify(

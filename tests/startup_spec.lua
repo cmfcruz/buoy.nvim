@@ -84,6 +84,7 @@ local ok, err = xpcall(function()
       cmd = vim.o.shell,
       title = " Test ",
       window = { style = "vsplit", width = 80, border = "rounded", stay = true },
+      context = vim.deepcopy(require("buoy.capabilities").defaults),
     },
     socket = "/tmp/buoy-startup-spec.sock",
     ensure_setup = function() end,
@@ -98,9 +99,11 @@ local ok, err = xpcall(function()
     end,
   }
 
+  local terminal_env
   local terminal_exit
   local original_termopen = vim.fn.termopen
   vim.fn.termopen = function(_, opts)
+    terminal_env = opts.env
     terminal_exit = opts.on_exit
     return vim.api.nvim_open_term(0, {})
   end
@@ -144,10 +147,21 @@ local ok, err = xpcall(function()
     "the replacement window is ordinary"
   )
 
+  package.loaded["buoy"].config.agent = "pi"
+  package.loaded["buoy"].config.context.expose_editor_context = false
   terminal.open()
   truthy(
     vim.api.nvim_get_current_buf() ~= terminal_buf,
     "opening after terminal exit starts a fresh session"
+  )
+  truthy(
+    terminal_env.BUOY_PI_INSTRUCTIONS:find("## Neovim context", 1, true),
+    "Pi receives Buoy guidance through its environment"
+  )
+  truthy(
+    terminal_env.BUOY_CONTEXT_HOOK_COMMAND == nil
+      and terminal_env.BUOY_POST_TOOL_HOOK_COMMAND == nil,
+    "disabled editor context keeps Pi lifecycle hooks out of its environment"
   )
   terminal_exit()
   vim.fn.termopen = original_termopen

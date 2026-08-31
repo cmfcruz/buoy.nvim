@@ -218,7 +218,17 @@ local function start_term(argv)
   local plugin = require("buoy")
   local env
   if vim.fn.has("win32") == 0 then
-    env = { NVIM_CONTEXT_SOCKET = plugin.socket }
+    local instructions = require("buoy.instructions")
+    env = {
+      NVIM_CONTEXT_SOCKET = plugin.socket,
+    }
+    if plugin.config.agent == "pi" then
+      env.BUOY_PI_INSTRUCTIONS = instructions.neovim_instructions(plugin.config.context)
+      if plugin.config.context.expose_editor_context then
+        env.BUOY_CONTEXT_HOOK_COMMAND = instructions.hook_command()
+        env.BUOY_POST_TOOL_HOOK_COMMAND = instructions.post_tool_hook_command()
+      end
+    end
   end
   vim.api.nvim_buf_call(state.buf, function()
     -- launcher.resolve may run async; the buffer was locked while we waited so
@@ -265,7 +275,7 @@ function M.open()
       vim.notify(
         (
           "buoy: no compatible agent is installed ('%s' not found on $PATH). "
-          .. "Install Claude Code or Codex, or point `cmd` in setup() at your agent CLI."
+          .. "Install Claude Code, Codex, or Pi, or point `cmd` in setup() at your agent CLI."
         ):format(cmd),
         vim.log.levels.ERROR
       )
