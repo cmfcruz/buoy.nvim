@@ -100,29 +100,23 @@ local ok, err = xpcall(function()
   end)
   eq(1, #pi_launches, "Pi launches exactly once")
   eq(
-    instructions.pi_argv(
-      "pi",
-      instructions.neovim_instructions(),
-      hook_command,
-      post_tool_hook_command
-    ),
+    instructions.pi_argv("pi"),
     pi_launches[1],
-    "Pi launch uses append-system-prompt plus the bundled hook extension"
+    "Pi launch uses the bundled extension without overriding append-system instructions"
   )
 
   local context = require("buoy").config.context
   local expose_editor_context = context.expose_editor_context
   context.expose_editor_context = false
-  local no_context_instructions = instructions.neovim_instructions(context)
   local no_context_launches = {}
   require("buoy.launcher").resolve("pi", "pi", "/cwd", function(argv)
     no_context_launches[#no_context_launches + 1] = argv
   end)
   context.expose_editor_context = expose_editor_context
   eq(
-    { instructions.pi_argv("pi", no_context_instructions, nil, nil) },
+    { instructions.pi_argv("pi") },
     no_context_launches,
-    "disabled editor context omits Pi lifecycle-hook extension"
+    "disabled editor context keeps Pi guidance through the extension"
   )
 
   notifications = {}

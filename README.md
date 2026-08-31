@@ -239,7 +239,9 @@ buoy automatically adds its Neovim context guidance when it launches the
 agent. For Claude Code it uses `--append-system-prompt`. For Codex, buoy first
 asks `codex app-server` for the effective `developer_instructions` at Neovim's
 working directory, then appends its guidance without changing Codex's normal
-configuration precedence.
+configuration precedence. For Pi, the bundled extension appends buoy's guidance
+to Pi's assembled system prompt, preserving discovered `APPEND_SYSTEM.md`
+instructions.
 
 If the Codex configuration cannot be resolved within two seconds, buoy shows a
 warning and launches Codex without a developer-instructions override. This

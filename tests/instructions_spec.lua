@@ -138,15 +138,16 @@ local ok, err = xpcall(function()
     "Codex argv attaches its prompt and PostToolUse hooks after guidance"
   )
 
-  local pi_argv =
-    instructions.pi_argv("pi-custom", neovim_instructions, fake_context_hook, fake_post_tool_hook)
+  local pi_argv = instructions.pi_argv("pi-custom")
   eq("pi-custom", pi_argv[1], "Pi command is preserved")
-  eq("--append-system-prompt", pi_argv[2], "Pi receives the system prompt flag")
-  eq(neovim_instructions, pi_argv[3], "Pi receives the Buoy guidance")
-  eq("--extension", pi_argv[4], "Pi receives the extension flag")
+  eq("--extension", pi_argv[2], "Pi receives the extension flag")
   truthy(
-    pi_argv[5]:find("/bridge/pi_hooks%.ts$"),
+    pi_argv[3]:find("/bridge/pi_hooks%.ts$"),
     "Pi argv attaches the bundled lifecycle-hook extension"
+  )
+  truthy(
+    not vim.list_contains(pi_argv, "--append-system-prompt"),
+    "Pi keeps its discovered append-system instructions"
   )
 
   local claude_argv = instructions.claude_argv(
@@ -251,16 +252,12 @@ local ok, err = xpcall(function()
     "navigation-only guidance omits the diagnostics continuation argument"
   )
 
-  -- Nil hook commands omit both lifecycle hooks from all argv builders.
+  -- Nil hook commands omit both lifecycle hooks from the argv builders that
+  -- configure them directly.
   local claude_no_hook = instructions.claude_argv("claude-custom", neovim_instructions, nil, nil)
   truthy(
     not vim.list_contains(claude_no_hook, "--settings"),
     "Claude omits --settings when the hook is disabled"
-  )
-  local pi_no_hook = instructions.pi_argv("pi-custom", neovim_instructions, nil, nil)
-  truthy(
-    not vim.list_contains(pi_no_hook, "--extension"),
-    "Pi omits the lifecycle-hook extension when hooks are disabled"
   )
   local codex_no_hook = instructions.codex_argv("codex-custom", consolidated, nil, nil)
   for _, entry in ipairs(codex_no_hook) do

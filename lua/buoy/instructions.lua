@@ -170,12 +170,8 @@ function M.codex_argv(cmd, developer_instructions, context_hook_command, post_to
   return argv
 end
 
-function M.pi_argv(cmd, system_instructions, context_hook_command, post_tool_hook_command)
-  local argv = { cmd, "--append-system-prompt", system_instructions }
-  if context_hook_command or post_tool_hook_command then
-    vim.list_extend(argv, { "--extension", M.pi_extension_path() })
-  end
-  return argv
+function M.pi_argv(cmd)
+  return { cmd, "--extension", M.pi_extension_path() }
 end
 
 function M.claude_argv(cmd, system_instructions, context_hook_command, post_tool_hook_command)

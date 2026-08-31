@@ -21,14 +21,19 @@ function runHook(command: string): Promise<string> {
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.on("before_agent_start", async () => {
+	pi.on("before_agent_start", async (event) => {
+		const instructions = process.env.BUOY_PI_INSTRUCTIONS;
+		if (!instructions) return;
+
+		const systemPrompt = `${event.systemPrompt}\n\n${instructions}`;
 		const command = process.env.BUOY_CONTEXT_HOOK_COMMAND;
-		if (!command) return;
+		if (!command) return { systemPrompt };
 
 		const content = await runHook(command);
-		if (!content) return;
+		if (!content) return { systemPrompt };
 
 		return {
+			systemPrompt,
 			message: {
 				customType: "buoy-neovim-context",
 				content,
