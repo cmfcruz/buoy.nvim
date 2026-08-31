@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.2.0](https://github.com/cmfcruz/buoy.nvim/compare/v3.1.1...v3.2.0) (2026-08-31)
+
+
+### Features
+
+* add Pi agent support ([#29](https://github.com/cmfcruz/buoy.nvim/issues/29)) ([fd1f829](https://github.com/cmfcruz/buoy.nvim/commit/fd1f82957f3c030145ba1b448532750fa14172af))
+
 ## [3.1.1](https://github.com/cmfcruz/buoy.nvim/compare/v3.1.0...v3.1.1) (2026-08-27)
 
 
