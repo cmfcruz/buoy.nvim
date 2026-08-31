@@ -1,6 +1,7 @@
---- Shared Neovim discovery and RPC helpers for the bridge scripts.
---- Loaded with dofile() from context_hook.lua and agent_cli.lua so the
---- standalone scripts can share this sibling without relying on runtimepath.
+--- Private Neovim discovery and RPC transport for bridge/buoy.lua.
+--- Loaded with dofile() so the standalone entry point can use this sibling
+--- without relying on runtimepath. This helper is not an agent-facing command
+--- surface; bridge/buoy.lua exposes only its fixed operations and hook modes.
 ---
 --- Socket discovery, in order:
 ---   1. $NVIM_CONTEXT_SOCKET  — exported by the plugin when launching the

@@ -44,10 +44,10 @@ local ok, err = xpcall(function()
   --- Runs a bridge script as a real headless child while this instance keeps
   --- serving RPC (vim.wait pumps the main loop), mirroring how the agent
   --- spawns the hook in production.
-  local function run_script(script, env)
+  local function run_script(script, mode, env, leave_stdin_open)
     local stdout, exit_code = {}, nil
     local job = vim.fn.jobstart(
-      { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", script },
+      { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", script, mode },
       {
         env = env,
         stdout_buffered = true,
@@ -60,7 +60,9 @@ local ok, err = xpcall(function()
       }
     )
     truthy(job > 0, "child job starts")
-    vim.fn.chanclose(job, "stdin")
+    if not leave_stdin_open then
+      vim.fn.chanclose(job, "stdin")
+    end
     truthy(
       vim.wait(10000, function()
         return exit_code ~= nil
@@ -70,10 +72,12 @@ local ok, err = xpcall(function()
     return stdout, exit_code
   end
 
-  local hook = root .. "/bridge/context_hook.lua"
+  local bridge = root .. "/bridge/buoy.lua"
   local stdout, code
 
-  stdout, code = run_script(hook, { NVIM_CONTEXT_SOCKET = addr })
+  -- Leave stdin open for one run of each hook: either would time out if it
+  -- tried to consume the agent's event payload.
+  stdout, code = run_script(bridge, "hook-context", { NVIM_CONTEXT_SOCKET = addr }, true)
   eq(0, code, "hook exits 0 on success")
   eq(
     "Current Neovim editor context (auto-refreshed for every prompt):",
@@ -85,9 +89,8 @@ local ok, err = xpcall(function()
   eq(file, snapshot.current.file, "snapshot carries the current file")
   eq({ line = 1, col = 1 }, snapshot.current.cursor, "snapshot carries the cursor")
 
-  local checktime_hook = root .. "/bridge/checktime_hook.lua"
   vim.fn.writefile({ "local x = 2" }, file)
-  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  stdout, code = run_script(bridge, "hook-checktime", { NVIM_CONTEXT_SOCKET = addr }, true)
   eq(0, code, "checktime hook exits 0 on success")
   eq({ "" }, stdout, "checktime hook prints nothing")
   truthy(
@@ -108,7 +111,7 @@ local ok, err = xpcall(function()
   eq({}, vim.fn.win_findbuf(hidden_buf), "hidden buffer is not displayed before refresh")
 
   vim.fn.writefile({ "local hidden = 2" }, hidden_file)
-  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  stdout, code = run_script(bridge, "hook-checktime", { NVIM_CONTEXT_SOCKET = addr })
   eq(0, code, "checktime hook exits 0 after refreshing a hidden buffer")
   eq({ "" }, stdout, "checktime hook prints nothing after refreshing a hidden buffer")
   truthy(
@@ -120,7 +123,7 @@ local ok, err = xpcall(function()
 
   vim.api.nvim_buf_set_lines(hidden_buf, 0, 1, false, { "local hidden = 3" })
   vim.fn.writefile({ "local hidden = 4" }, hidden_file)
-  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  stdout, code = run_script(bridge, "hook-checktime", { NVIM_CONTEXT_SOCKET = addr })
   eq(0, code, "checktime hook exits 0 for a modified hidden buffer")
   eq(
     { "local hidden = 3" },
@@ -134,7 +137,7 @@ local ok, err = xpcall(function()
   vim.cmd("edit " .. vim.fn.fnameescape(modified_file))
   vim.api.nvim_buf_set_lines(0, 0, 1, false, { "local x = 2" })
   vim.fn.writefile({ "local x = 3" }, modified_file)
-  stdout, code = run_script(checktime_hook, { NVIM_CONTEXT_SOCKET = addr })
+  stdout, code = run_script(bridge, "hook-checktime", { NVIM_CONTEXT_SOCKET = addr })
   eq(0, code, "checktime hook exits 0 when a buffer has unsaved edits")
   eq({ "" }, stdout, "checktime hook prints nothing when a buffer has unsaved edits")
   eq(
@@ -148,19 +151,29 @@ local ok, err = xpcall(function()
   -- surfaces error noise. $NVIM is overridden because jobstart() sets it
   -- automatically for children of this test instance.
   local missing = temp .. "/missing.sock"
-  stdout, code = run_script(hook, {
+  stdout, code = run_script(bridge, "hook-context", {
     NVIM = missing,
     NVIM_CONTEXT_SOCKET = missing,
   })
   eq(0, code, "hook exits 0 when no Neovim is reachable")
   eq({ "" }, stdout, "hook prints nothing when no Neovim is reachable")
 
-  stdout, code = run_script(checktime_hook, {
+  stdout, code = run_script(bridge, "hook-checktime", {
     NVIM = missing,
     NVIM_CONTEXT_SOCKET = missing,
   })
   eq(0, code, "checktime hook exits 0 when no Neovim is reachable")
   eq({ "" }, stdout, "checktime hook prints nothing when no Neovim is reachable")
+
+  -- Even an internal transport-load failure keeps both hook contracts
+  -- fail-open. Copy only the entry point so its sibling helper is absent.
+  local orphan_bridge = temp .. "/buoy.lua"
+  vim.fn.writefile(vim.fn.readfile(bridge), orphan_bridge)
+  for _, mode in ipairs({ "hook-context", "hook-checktime" }) do
+    stdout, code = run_script(orphan_bridge, mode, { NVIM = "", NVIM_CONTEXT_SOCKET = "" })
+    eq(0, code, mode .. " exits 0 when the RPC transport cannot load")
+    eq({ "" }, stdout, mode .. " stays silent when the RPC transport cannot load")
+  end
 end, debug.traceback)
 
 vim.fn.delete(temp, "rf")

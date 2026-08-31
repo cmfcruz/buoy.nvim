@@ -179,18 +179,18 @@ require("buoy").setup({
 
 ## Automatic editor hooks
 
-On Linux and macOS, buoy registers a prompt hook (`bridge/context_hook.lua`)
-with supported agents: before the model sees each prompt,
-the hook prints a focused snapshot of your editor state — cwd, current file,
-cursor, visual selection, and open buffers — which the agent attaches as
+On Linux and macOS, buoy registers its unified `bridge/buoy.lua` CLI in
+`hook-context` mode with each supported agent. Before the model sees each
+prompt, the hook prints a focused snapshot of your editor state — cwd, current
+file, cursor, visual selection, and open buffers — which the agent attaches as
 context. Enrichment is deterministic (there is no tool call for the model to
 skip) and costs no extra inference round trip.
 
-Buoy also registers a `PostToolUse` hook (`bridge/checktime_hook.lua`) for the
-agents' native `Edit` and `Write` tools. After either tool completes, the hook
-runs `:checktime` in the launching Neovim so clean, externally changed buffers
-refresh under Neovim's normal `autoread` behavior. Buffers with unsaved edits
-are never overwritten; Neovim keeps its normal warning and reload-choice
+Buoy registers the same CLI in `hook-checktime` mode as a `PostToolUse` hook for
+the agents' native `Edit` and `Write` tools. After either tool completes, the
+hook runs `:checktime` in the launching Neovim so clean, externally changed
+buffers refresh under Neovim's normal `autoread` behavior. Buffers with unsaved
+edits are never overwritten; Neovim keeps its normal warning and reload-choice
 behavior. Writes performed through shell commands do not trigger this hook.
 
 Hook wiring is agent-specific:
@@ -217,20 +217,22 @@ blocks the agent.
 │        ▲                      │                        │
 │        │ Neovim RPC           │                        │
 │  ┌─────┴──────────────┐       │                        │
-│  │ context_hook       │◄──────┤  snapshot each prompt  │
-│  │ checktime_hook     │◄──────┤  PostToolUse Edit/Write│
-│  │ agent_cli          │◄──────┤  on-demand operations  │
+│  │ buoy CLI           │◄──────┤  snapshot each prompt  │
+│  │                    │◄──────┤  PostToolUse Edit/Write│
+│  │                    │◄──────┤  on-demand operations  │
 │  └────────────────────┘       │                        │
 │  (spawned by the agent)       │                        │
 └───────────────────────────────┴────────────────────────┘
 ```
 
 On Linux and macOS, buoy gives the agent a compact command prefix for its
-private `bridge/agent_cli.lua` adapter. The agent invokes it through its normal
-shell tool when it needs a live buffer range, diagnostics, or an explicitly
-requested cursor jump. The CLI connects only to the Neovim session that
-launched the terminal, returns one bounded JSON object, and follows the agent's
-normal shell approval policy. It is an internal integration surface, not a
+private `bridge/buoy.lua` CLI. The same entry point serves lifecycle hooks and
+on-demand operations, so it is the only bridge script agents need to invoke.
+The agent runs it through its normal shell tool when it needs a live buffer
+range, diagnostics, or an explicitly requested cursor jump. The CLI connects
+only to the Neovim session that launched the terminal, returns one bounded JSON
+object, and follows the agent's normal shell approval policy. It is an internal
+integration surface, not a
 globally installed user command.
 
 ## Agent instructions
