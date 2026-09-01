@@ -45,7 +45,7 @@ local ok, err = xpcall(function()
   context.state.filetype = "lua"
   context.state.cursor = { line = 1, col = 1 }
 
-  local cli = root .. "/bridge/agent_cli.lua"
+  local cli = root .. "/bridge/buoy.lua"
 
   --- Runs the CLI exactly as the agent's shell tool would: a headless child
   --- with the operation at arg[1], while this instance keeps serving RPC
@@ -94,14 +94,14 @@ local ok, err = xpcall(function()
   eq(0, code, "explicit --file with a space in the path works")
   eq({ "local z = 3" }, decode_single(stdout).lines, "explicit file reads target the right buffer")
 
-  local namespace = vim.api.nvim_create_namespace("BuoyAgentCliSpec")
+  local namespace = vim.api.nvim_create_namespace("BuoyBridgeCliSpec")
   vim.diagnostic.set(namespace, 0, {
     {
       lnum = 1,
       col = 2,
       severity = vim.diagnostic.severity.ERROR,
       message = "cli test error",
-      source = "agent_cli_spec",
+      source = "bridge_cli_spec",
     },
   })
   stdout, code = run_cli({ "get_diagnostics", "--file", file })
@@ -119,7 +119,15 @@ local ok, err = xpcall(function()
   eq("cursor_position", decode_single(stdout).kind, "navigation result is labeled")
   eq({ 2, 2 }, vim.api.nvim_win_get_cursor(0), "the CLI moved the live cursor")
 
-  -- Invalid input: dispatch errors remain one JSON error with exit class 2.
+  -- Invalid input: parsing and dispatch errors remain one JSON error with exit class 2.
+  stdout, code = run_cli({})
+  eq(2, code, "a missing operation exits 2")
+  eq(
+    "INVALID_OPERATION",
+    decode_single(stdout).code,
+    "a missing operation reports INVALID_OPERATION"
+  )
+
   stdout, code = run_cli({ "frobnicate" })
   eq(2, code, "unknown operations exit 2")
   eq("INVALID_OPERATION", decode_single(stdout).code, "unknown operations report INVALID_OPERATION")
@@ -193,4 +201,4 @@ if not ok then
   error(err)
 end
 
-print("agent_cli_spec: ok")
+print("bridge_cli_spec: ok")

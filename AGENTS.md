@@ -14,12 +14,13 @@ arguments and preserve Codex's effective instructions: `codex.lua` spawns the
 Codex's `developer_instructions`. User commands and zero-configuration startup live in
 `plugin/buoy.lua`.
 
-Standalone scripts under `bridge/` provide the per-prompt context hook, post-tool buffer
-refresh hook, private one-shot agent CLI, and shared Neovim RPC discovery. There is no MCP
-server; the CLI exposes exactly `get_buffer_range`, `get_diagnostics`, and
-`set_cursor_position`. Bridge children run with `nvim --headless -u NONE -i NONE -l`. The
-live bridge and hooks are attached only on Linux and macOS; Windows keeps the terminal UI
-without live editor context. Self-contained headless specs live in `tests/`. Project-site
+`bridge/buoy.lua` is the single agent-invoked entry point for per-prompt context, post-tool
+buffer refresh, and private one-shot operations; `bridge/nvim_rpc.lua` is its private shared
+Neovim RPC transport. There is no MCP server; the CLI exposes exactly `get_buffer_range`,
+`get_diagnostics`, and `set_cursor_position`, while reserved hook modes serve lifecycle
+events. Bridge children run with `nvim --headless -u NONE -i NONE -l`. The live bridge and
+hooks are attached only on Linux and macOS; Windows keeps the terminal UI without live
+editor context. Self-contained headless specs live in `tests/`. Project-site
 media live under `docs/`, while `_config.yml` configures the root-based GitHub Pages site
 that renders the README as its index. CI and release automation live in
 `.github/workflows/`. Do not commit generated files such as `nvim.log`, `_site/`, or
@@ -58,7 +59,7 @@ coverage target, but every behavior change should include a regression test. CI 
 full suite on Ubuntu with Neovim 0.11.0, stable, and nightly; nightly is allowed to fail.
 
 Keep PTY coverage deterministic with `nvim_open_term()` rather than timing real terminal
-output. `tests/agent_cli_spec.lua` and `tests/hook_spec.lua` open real local RPC servers, so
+output. `tests/bridge_cli_spec.lua` and `tests/hook_spec.lua` open real local RPC servers, so
 restricted sandboxes may need permission to create their sockets; an `operation not
 permitted` failure there is an environment limitation, not automatically a plugin
 regression.

@@ -1,5 +1,9 @@
 local root = vim.fn.getcwd()
+vim.opt.runtimepath:prepend(root)
 package.path = root .. "/lua/?.lua;" .. root .. "/lua/?/init.lua;" .. package.path
+-- A globally installed start package may have loaded its own copy before this
+-- spec runs under `-u NONE`; force the checkout's module after setting the path.
+package.loaded["buoy.instructions"] = nil
 
 local function fail(message)
   error(message, 2)
@@ -83,42 +87,35 @@ local ok, err = xpcall(function()
 
   -- The plugin root may be an installed (possibly symlinked) copy rather than
   -- this checkout, so assert the command's shape instead of the exact path.
-  local hook_command = instructions.hook_command()
-  truthy(
-    hook_command:find("^'" .. vim.pesc(vim.v.progpath) .. "' %-%-headless %-u NONE %-i NONE %-l '"),
-    "context hook command isolates the current nvim from user configuration"
-  )
-  truthy(
-    hook_command:find("/bridge/context_hook%.lua'$"),
-    "context hook command targets the bundled context hook script"
-  )
-  local post_tool_hook_command = instructions.post_tool_hook_command()
-  truthy(
-    post_tool_hook_command:find(
-      "^'" .. vim.pesc(vim.v.progpath) .. "' %-%-headless %-u NONE %-i NONE %-l '"
-    ),
-    "PostToolUse hook command isolates the current nvim from user configuration"
-  )
-  truthy(
-    post_tool_hook_command:find("/bridge/checktime_hook%.lua'$"),
-    "PostToolUse hook command targets the bundled checktime hook script"
-  )
   local cli_prefix = instructions.cli_prefix()
   truthy(
     cli_prefix:find("^'" .. vim.pesc(vim.v.progpath) .. "' %-%-headless %-u NONE %-i NONE %-l '"),
     "CLI prefix isolates the headless child from user configuration"
   )
   truthy(
-    cli_prefix:find("/bridge/agent_cli%.lua'$"),
-    "CLI prefix targets the bundled agent adapter"
+    cli_prefix:find("/bridge/buoy%.lua'$"),
+    "CLI prefix targets the unified bridge entry point"
+  )
+
+  local hook_command = instructions.hook_command()
+  eq(
+    cli_prefix .. " hook-context",
+    hook_command,
+    "context hook uses the unified bridge path and its internal mode"
+  )
+  local post_tool_hook_command = instructions.post_tool_hook_command()
+  eq(
+    cli_prefix .. " hook-checktime",
+    post_tool_hook_command,
+    "PostToolUse hook uses the unified bridge path and its internal mode"
   )
   truthy(
     neovim_instructions:find(cli_prefix, 1, true),
     "Buoy guidance includes the exact CLI prefix"
   )
 
-  local fake_context_hook = "'/path/to/nvim' --headless -l '/path/to/context_hook.lua'"
-  local fake_post_tool_hook = "'/path/to/nvim' --headless -l '/path/to/checktime_hook.lua'"
+  local fake_context_hook = "'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-context"
+  local fake_post_tool_hook = "'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-checktime"
   local codex_argv =
     instructions.codex_argv("codex-custom", consolidated, fake_context_hook, fake_post_tool_hook)
   eq("codex-custom", codex_argv[1], "Codex command is preserved")
@@ -129,10 +126,10 @@ local ok, err = xpcall(function()
     {
       "-c",
       'hooks.UserPromptSubmit=[{hooks=[{type="command",'
-        .. "command=\"'/path/to/nvim' --headless -l '/path/to/context_hook.lua'\",timeout=10}]}]",
+        .. "command=\"'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-context\",timeout=10}]}]",
       "-c",
       'hooks.PostToolUse=[{matcher="Edit|Write",hooks=[{type="command",'
-        .. "command=\"'/path/to/nvim' --headless -l '/path/to/checktime_hook.lua'\",timeout=10}]}]",
+        .. "command=\"'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-checktime\",timeout=10}]}]",
     },
     { unpack(codex_argv, 4) },
     "Codex argv attaches its prompt and PostToolUse hooks after guidance"

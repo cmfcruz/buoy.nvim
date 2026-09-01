@@ -17,14 +17,15 @@ local function shell_quote(s)
   return "'" .. s:gsub("'", "'\\''") .. "'"
 end
 
-local function headless_script_command(script)
-  return shell_quote(vim.v.progpath)
+local function bridge_command(mode)
+  local command = shell_quote(vim.v.progpath)
     .. " --headless -u NONE -i NONE -l "
-    .. shell_quote(plugin_root .. "/bridge/" .. script)
+    .. shell_quote(plugin_root .. "/bridge/buoy.lua")
+  return mode and (command .. " " .. mode) or command
 end
 
 function M.cli_prefix()
-  return headless_script_command("agent_cli.lua")
+  return bridge_command()
 end
 
 --- Build the Neovim-integration guidance, including only the capabilities that
@@ -108,11 +109,11 @@ end
 --- persisted hook trust survives relaunches; the hook script discovers the
 --- socket from the environment exported in terminal.lua.
 function M.hook_command()
-  return headless_script_command("context_hook.lua")
+  return bridge_command("hook-context")
 end
 
 function M.post_tool_hook_command()
-  return headless_script_command("checktime_hook.lua")
+  return bridge_command("hook-checktime")
 end
 
 function M.pi_extension_path()

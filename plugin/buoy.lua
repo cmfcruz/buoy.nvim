@@ -23,8 +23,8 @@ end, { desc = "Toggle the buoy agent window", range = true })
 
 -- Zero-config path: if the user never calls require("buoy").setup(), apply
 -- defaults automatically so a bare `git clone` into pack/ just works (socket
--- published, live context ready, <F2> mapped, agent auto-detected). Deferred so
--- an explicit setup() in the user's config runs first and wins.
+-- published, live context ready, keys mapped, agent auto-detected and opened).
+-- Deferred so an explicit setup() in the user's config runs first and wins.
 vim.schedule(function()
   require("buoy").ensure_setup()
 end)

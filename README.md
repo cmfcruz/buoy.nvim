@@ -61,9 +61,11 @@ git clone https://github.com/cmfcruz/buoy.nvim `
   "$env:LOCALAPPDATA\nvim-data\site\pack\buoy\start\buoy.nvim"
 ```
 
-Start Neovim, open any file, and **press `<F2>`** — the selected agent's TUI
-opens beside the editor. (buoy auto-detects which agent CLI is on your `$PATH`,
-preferring Claude Code, then Codex, then Pi; no config file required.)
+Start Neovim and buoy opens the selected agent's TUI automatically while
+leaving your editor, file explorer, dashboard, or other startup window focused.
+A startup reminder shows the layout-aware shortcuts (by default `<F2>` and
+`<S-F2>`). Buoy auto-detects which agent CLI is on your `$PATH`, preferring
+Claude Code, then Codex, then Pi; no config file is required.
 
 On Windows, the terminal UI works normally, but buoy does not attach its POSIX
 bridge hooks or live editor CLI. Buoy warns once when the agent starts.
@@ -82,8 +84,8 @@ setup — it is configured at launch; see
 ## Configuration
 
 buoy works with zero configuration: it auto-detects your agent CLI (Claude
-Code first, then Codex, then Pi) and maps `<F2>`. Call `setup()` only to override a
-default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
+Code first, then Codex, then Pi), opens it after startup, and maps `<F2>`. Call
+`setup()` only to override a default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
 `~/AppData/Local/nvim/init.lua` on Windows):
 
 ```lua
@@ -92,6 +94,10 @@ require("buoy").setup({
   keymaps = {
     primary = "<F2>",         -- focus in a vsplit, show/hide in a float; false to disable
     secondary = "<S-F2>",     -- show/hide in a vsplit, focus in a float; false to disable
+  },
+  startup = {
+    open = true,              -- false restores manual-open startup behavior
+    message = true,           -- false suppresses the startup shortcut reminder
   },
   -- cmd = "codex",           -- override the agent binary if it isn't on $PATH by name
   window = {
@@ -109,6 +115,14 @@ require("buoy").setup({
 })
 ```
 
+- **Startup behavior:** buoy opens one agent window automatically and then
+  returns focus to the startup window that was active before it opened. Set
+  `startup.open = false` to launch only on demand, or
+  `startup.message = false` to keep automatic opening without the startup
+  reminder. The reminder uses your configured key notation, omits disabled
+  mappings, and describes the actions for the split or float that actually
+  opened. It is dismissed by the first configured Buoy keypress or replaced
+  naturally by the next command or message.
 - **Switch agents:** set `agent = "codex"` or `agent = "pi"`. (With the default
   `"auto"`, buoy uses Pi too if it's the only supported CLI on your `$PATH`.)
 - **Override per session:** set the `BUOY_AGENT` environment variable
@@ -179,18 +193,18 @@ require("buoy").setup({
 
 ## Automatic editor hooks
 
-On Linux and macOS, buoy registers a prompt hook (`bridge/context_hook.lua`)
-with supported agents: before the model sees each prompt,
-the hook prints a focused snapshot of your editor state — cwd, current file,
-cursor, visual selection, and open buffers — which the agent attaches as
+On Linux and macOS, buoy registers its unified `bridge/buoy.lua` CLI in
+`hook-context` mode with each supported agent. Before the model sees each
+prompt, the hook prints a focused snapshot of your editor state — cwd, current
+file, cursor, visual selection, and open buffers — which the agent attaches as
 context. Enrichment is deterministic (there is no tool call for the model to
 skip) and costs no extra inference round trip.
 
-Buoy also registers a `PostToolUse` hook (`bridge/checktime_hook.lua`) for the
-agents' native `Edit` and `Write` tools. After either tool completes, the hook
-runs `:checktime` in the launching Neovim so clean, externally changed buffers
-refresh under Neovim's normal `autoread` behavior. Buffers with unsaved edits
-are never overwritten; Neovim keeps its normal warning and reload-choice
+Buoy registers the same CLI in `hook-checktime` mode as a `PostToolUse` hook for
+the agents' native `Edit` and `Write` tools. After either tool completes, the
+hook runs `:checktime` in the launching Neovim so clean, externally changed
+buffers refresh under Neovim's normal `autoread` behavior. Buffers with unsaved
+edits are never overwritten; Neovim keeps its normal warning and reload-choice
 behavior. Writes performed through shell commands do not trigger this hook.
 
 Hook wiring is agent-specific:
@@ -217,20 +231,22 @@ blocks the agent.
 │        ▲                      │                        │
 │        │ Neovim RPC           │                        │
 │  ┌─────┴──────────────┐       │                        │
-│  │ context_hook       │◄──────┤  snapshot each prompt  │
-│  │ checktime_hook     │◄──────┤  PostToolUse Edit/Write│
-│  │ agent_cli          │◄──────┤  on-demand operations  │
+│  │ buoy CLI           │◄──────┤  snapshot each prompt  │
+│  │                    │◄──────┤  PostToolUse Edit/Write│
+│  │                    │◄──────┤  on-demand operations  │
 │  └────────────────────┘       │                        │
 │  (spawned by the agent)       │                        │
 └───────────────────────────────┴────────────────────────┘
 ```
 
 On Linux and macOS, buoy gives the agent a compact command prefix for its
-private `bridge/agent_cli.lua` adapter. The agent invokes it through its normal
-shell tool when it needs a live buffer range, diagnostics, or an explicitly
-requested cursor jump. The CLI connects only to the Neovim session that
-launched the terminal, returns one bounded JSON object, and follows the agent's
-normal shell approval policy. It is an internal integration surface, not a
+private `bridge/buoy.lua` CLI. The same entry point serves lifecycle hooks and
+on-demand operations, so it is the only bridge script agents need to invoke.
+The agent runs it through its normal shell tool when it needs a live buffer
+range, diagnostics, or an explicitly requested cursor jump. The CLI connects
+only to the Neovim session that launched the terminal, returns one bounded JSON
+object, and follows the agent's normal shell approval policy. It is an internal
+integration surface, not a
 globally installed user command.
 
 ## Agent instructions
