@@ -37,34 +37,110 @@ local function agent_is_last_ordinary_window()
   return true
 end
 
+--- True when quitting the current ordinary window would leave the agent split
+--- as the only ordinary window in its tabpage.
+local function current_is_last_window_beside_agent()
+  if not win_valid() or vim.api.nvim_win_get_config(state.win).relative ~= "" then
+    return false
+  end
+  local current = vim.api.nvim_get_current_win()
+  if
+    current == state.win
+    or vim.api.nvim_win_get_config(current).relative ~= ""
+    or vim.api.nvim_win_get_tabpage(current) ~= vim.api.nvim_win_get_tabpage(state.win)
+  then
+    return false
+  end
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if win ~= current and win ~= state.win and vim.api.nvim_win_get_config(win).relative == "" then
+      return false
+    end
+  end
+  return true
+end
+
+local function restore_closed_window(buf)
+  if
+    not agent_is_last_ordinary_window()
+    or not buf
+    or buf == state.buf
+    or not vim.api.nvim_buf_is_valid(buf)
+  then
+    return
+  end
+  vim.api.nvim_open_win(buf, true, { split = "left", win = state.win })
+end
+
+local open_window
 local last_window_guard_installed = false
 
---- Quit the agent split once it becomes the last ordinary window in its
---- tabpage (which, on the last tab, exits Neovim). Installed once per session
---- and gated on `window.stay`, read live so the flag applies without a restart.
+--- Hide the nonessential agent before :quit decides whether the current code
+--- window is the last one. This preserves Neovim's normal E37 behavior for a
+--- modified buffer instead of allowing 'hidden' to close its window first. If
+--- the code window survives, the quit was rejected or cancelled, so restore
+--- the agent around the same terminal session without taking editor focus.
+--- Keep the WinClosed fallback for :close and API-driven window closure, which
+--- do not emit QuitPre; if its deferred quit fails, restore the closed buffer.
 local function ensure_last_window_guard()
   if last_window_guard_installed then
     return
   end
   last_window_guard_installed = true
 
+  local group = vim.api.nvim_create_augroup("BuoyLastWindow", { clear = true })
+  vim.api.nvim_create_autocmd("QuitPre", {
+    group = group,
+    callback = function()
+      if require("buoy").config.window.stay or not current_is_last_window_beside_agent() then
+        return
+      end
+      local code_win = vim.api.nvim_get_current_win()
+      local code_buf = vim.api.nvim_get_current_buf()
+      local tab = vim.api.nvim_get_current_tabpage()
+      M.hide()
+      vim.schedule(function()
+        if
+          win_valid()
+          or not buf_valid()
+          or not vim.api.nvim_win_is_valid(code_win)
+          or vim.api.nvim_win_get_buf(code_win) ~= code_buf
+          or vim.api.nvim_win_get_tabpage(code_win) ~= tab
+          or vim.api.nvim_get_current_tabpage() ~= tab
+        then
+          return
+        end
+        local focus = vim.api.nvim_get_current_win()
+        local ok = pcall(open_window)
+        if ok and vim.api.nvim_win_is_valid(focus) then
+          vim.api.nvim_set_current_win(focus)
+        end
+      end)
+    end,
+  })
   vim.api.nvim_create_autocmd("WinClosed", {
-    group = vim.api.nvim_create_augroup("BuoyLastWindow", { clear = true }),
+    group = group,
     callback = function(args)
       if require("buoy").config.window.stay then
         return
       end
       -- Only react to *other* windows closing; the agent's own close is
-      -- handled by install_close_cleanup.
+      -- handled by install_close_cleanup. WinClosed runs before removal, so
+      -- args.buf still identifies the buffer we may need to put back.
       if not win_valid() or tonumber(args.match) == state.win then
         return
       end
+      local closed_buf = args.buf
       -- Defer: during WinClosed the layout still counts the closing window.
       vim.schedule(function()
-        if agent_is_last_ordinary_window() then
-          vim.api.nvim_win_call(state.win, function()
-            vim.cmd("quit")
-          end)
+        if not agent_is_last_ordinary_window() then
+          return
+        end
+        local agent_win = state.win
+        local ok = pcall(vim.api.nvim_win_call, agent_win, function()
+          vim.cmd("quit")
+        end)
+        if not ok then
+          pcall(restore_closed_window, closed_buf)
         end
       end)
     end,
@@ -182,7 +258,7 @@ function M.current_layout()
   return current_layout()
 end
 
-local function open_window()
+open_window = function()
   local plugin = require("buoy")
   local cfg = plugin.config.window
   local width = compute_width(cfg)
