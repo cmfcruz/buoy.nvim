@@ -26,6 +26,7 @@ end
 local ok, err = xpcall(function()
   local original_schedule = vim.schedule
   local original_echo = vim.api.nvim_echo
+  local original_list_uis = vim.api.nvim_list_uis
   local original_serverstart = vim.fn.serverstart
   local original_executable = vim.fn.executable
   local original_agent = vim.env.BUOY_AGENT
@@ -36,6 +37,9 @@ local ok, err = xpcall(function()
   end
   vim.api.nvim_echo = function(chunks)
     echoes[#echoes + 1] = chunks[1][1]
+  end
+  vim.api.nvim_list_uis = function()
+    return { {} }
   end
   vim.fn.serverstart = function()
     return "/tmp/buoy-auto-open-spec.sock"
@@ -166,6 +170,19 @@ local ok, err = xpcall(function()
   eq(0, opens, "an already-visible agent is not reopened")
   eq(0, #echoes, "an already-visible agent is not announced")
 
+  reset("vsplit")
+  vim.api.nvim_list_uis = function()
+    return {}
+  end
+  buoy = require("buoy")
+  buoy.setup()
+  run_queue()
+  eq(0, opens, "headless startup does not open the agent")
+  eq(0, #echoes, "headless startup does not emit the reminder")
+  vim.api.nvim_list_uis = function()
+    return { {} }
+  end
+
   local startup = require("buoy.startup")
   eq(
     "Buoy enabled · <F2>: switch between agent and code",
@@ -192,6 +209,7 @@ local ok, err = xpcall(function()
 
   vim.schedule = original_schedule
   vim.api.nvim_echo = original_echo
+  vim.api.nvim_list_uis = original_list_uis
   vim.fn.serverstart = original_serverstart
   vim.fn.executable = original_executable
   vim.env.BUOY_AGENT = original_agent

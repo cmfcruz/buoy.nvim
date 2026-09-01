@@ -59,6 +59,10 @@ local function restore_window(tab, win)
 end
 
 local function open_once()
+  if #vim.api.nvim_list_uis() == 0 then
+    return
+  end
+
   local plugin = require("buoy")
   local terminal = require("buoy.terminal")
   if terminal.is_visible() then
