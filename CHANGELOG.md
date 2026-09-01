@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/cmfcruz/buoy.nvim/compare/v3.2.0...v4.0.0) (2026-09-01)
+
+
+### ⚠ BREAKING CHANGES
+
+* unify the bridge and open Buoy on startup ([#31](https://github.com/cmfcruz/buoy.nvim/issues/31))
+
+### Features
+
+* unify the bridge and open Buoy on startup ([#31](https://github.com/cmfcruz/buoy.nvim/issues/31)) ([a8cc79f](https://github.com/cmfcruz/buoy.nvim/commit/a8cc79fe7f64ea653742013ef762ee314a6c82e8))
+
 ## [3.2.0](https://github.com/cmfcruz/buoy.nvim/compare/v3.1.1...v3.2.0) (2026-08-31)
 
 
