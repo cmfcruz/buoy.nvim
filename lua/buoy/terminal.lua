@@ -37,34 +37,151 @@ local function agent_is_last_ordinary_window()
   return true
 end
 
-local last_window_guard_installed = false
+--- True when quitting the current ordinary window would leave the agent split
+--- as the only ordinary window in its tabpage.
+local function current_is_last_window_beside_agent()
+  if not win_valid() or vim.api.nvim_win_get_config(state.win).relative ~= "" then
+    return false
+  end
+  local current = vim.api.nvim_get_current_win()
+  if
+    current == state.win
+    or vim.api.nvim_win_get_config(current).relative ~= ""
+    or vim.api.nvim_win_get_tabpage(current) ~= vim.api.nvim_win_get_tabpage(state.win)
+  then
+    return false
+  end
+  for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
+    if win ~= current and win ~= state.win and vim.api.nvim_win_get_config(win).relative == "" then
+      return false
+    end
+  end
+  return true
+end
 
---- Quit the agent split once it becomes the last ordinary window in its
---- tabpage (which, on the last tab, exits Neovim). Installed once per session
---- and gated on `window.stay`, read live so the flag applies without a restart.
+local function usable_recovery_buffer(buf)
+  return buf
+    and buf ~= state.buf
+    and vim.api.nvim_buf_is_valid(buf)
+    and vim.api.nvim_buf_is_loaded(buf)
+end
+
+--- Prefer the current source of unsaved state over callback order. Commands
+--- such as :only close several windows before scheduled recovery runs, and a
+--- closed buffer may already have been wiped by its 'bufhidden' policy.
+local function recovery_buffer(closed_buffers)
+  local modified = {}
+  for _, info in ipairs(vim.fn.getbufinfo({ bufmodified = 1 })) do
+    if usable_recovery_buffer(info.bufnr) then
+      modified[#modified + 1] = info.bufnr
+    end
+  end
+  table.sort(modified)
+  if modified[1] then
+    return modified[1]
+  end
+
+  local fallback = {}
+  for buf in pairs(closed_buffers) do
+    if usable_recovery_buffer(buf) then
+      fallback[#fallback + 1] = buf
+    end
+  end
+  table.sort(fallback)
+  return fallback[1]
+end
+
+local function restore_closed_window(closed_buffers)
+  if not agent_is_last_ordinary_window() then
+    return
+  end
+  local buf = recovery_buffer(closed_buffers)
+  if buf then
+    vim.api.nvim_open_win(buf, true, { split = "left", win = state.win })
+    M.relayout()
+  end
+end
+
+local open_window
+local last_window_guard_installed = false
+local pending_closed_buffers = {}
+local recovery_scheduled = false
+
+--- Hide the nonessential agent before :quit decides whether the current code
+--- window is the last one. This preserves Neovim's normal E37 behavior for a
+--- modified buffer instead of allowing 'hidden' to close its window first. If
+--- the code window survives, the quit was rejected or cancelled, so restore
+--- the agent around the same terminal session without taking editor focus.
+--- Keep the WinClosed fallback for :close and API-driven window closure, which
+--- do not emit QuitPre; if its deferred quit fails, restore the closed buffer.
 local function ensure_last_window_guard()
   if last_window_guard_installed then
     return
   end
   last_window_guard_installed = true
 
+  local group = vim.api.nvim_create_augroup("BuoyLastWindow", { clear = true })
+  vim.api.nvim_create_autocmd("QuitPre", {
+    group = group,
+    callback = function()
+      if require("buoy").config.window.stay or not current_is_last_window_beside_agent() then
+        return
+      end
+      local code_win = vim.api.nvim_get_current_win()
+      local code_buf = vim.api.nvim_get_current_buf()
+      local tab = vim.api.nvim_get_current_tabpage()
+      M.hide()
+      vim.schedule(function()
+        if
+          win_valid()
+          or not buf_valid()
+          or not vim.api.nvim_win_is_valid(code_win)
+          or vim.api.nvim_win_get_buf(code_win) ~= code_buf
+          or vim.api.nvim_win_get_tabpage(code_win) ~= tab
+          or vim.api.nvim_get_current_tabpage() ~= tab
+        then
+          return
+        end
+        local focus = vim.api.nvim_get_current_win()
+        local ok = pcall(open_window)
+        if ok and vim.api.nvim_win_is_valid(focus) then
+          vim.api.nvim_set_current_win(focus)
+        end
+      end)
+    end,
+  })
   vim.api.nvim_create_autocmd("WinClosed", {
-    group = vim.api.nvim_create_augroup("BuoyLastWindow", { clear = true }),
+    group = group,
     callback = function(args)
       if require("buoy").config.window.stay then
         return
       end
       -- Only react to *other* windows closing; the agent's own close is
-      -- handled by install_close_cleanup.
+      -- handled by install_close_cleanup. WinClosed runs before removal, so
+      -- args.buf still identifies the buffer we may need to put back.
       if not win_valid() or tonumber(args.match) == state.win then
         return
       end
-      -- Defer: during WinClosed the layout still counts the closing window.
+      pending_closed_buffers[args.buf] = true
+      if recovery_scheduled then
+        return
+      end
+      recovery_scheduled = true
+      -- Defer once for the whole close batch: during WinClosed the layout
+      -- still counts closing windows, and :only may emit several callbacks.
       vim.schedule(function()
-        if agent_is_last_ordinary_window() then
-          vim.api.nvim_win_call(state.win, function()
-            vim.cmd("quit")
-          end)
+        recovery_scheduled = false
+        local closed_buffers = pending_closed_buffers
+        pending_closed_buffers = {}
+        if not agent_is_last_ordinary_window() then
+          return
+        end
+        local agent_win = state.win
+        local ok = pcall(vim.api.nvim_win_call, agent_win, function()
+          vim.cmd("quit")
+        end)
+        if not ok then
+          pcall(restore_closed_window, closed_buffers)
         end
       end)
     end,
@@ -182,7 +299,7 @@ function M.current_layout()
   return current_layout()
 end
 
-local function open_window()
+open_window = function()
   local plugin = require("buoy")
   local cfg = plugin.config.window
   local width = compute_width(cfg)
