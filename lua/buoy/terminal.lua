@@ -59,20 +59,53 @@ local function current_is_last_window_beside_agent()
   return true
 end
 
-local function restore_closed_window(buf)
-  if
-    not agent_is_last_ordinary_window()
-    or not buf
-    or buf == state.buf
-    or not vim.api.nvim_buf_is_valid(buf)
-  then
+local function usable_recovery_buffer(buf)
+  return buf
+    and buf ~= state.buf
+    and vim.api.nvim_buf_is_valid(buf)
+    and vim.api.nvim_buf_is_loaded(buf)
+end
+
+--- Prefer the current source of unsaved state over callback order. Commands
+--- such as :only close several windows before scheduled recovery runs, and a
+--- closed buffer may already have been wiped by its 'bufhidden' policy.
+local function recovery_buffer(closed_buffers)
+  local modified = {}
+  for _, info in ipairs(vim.fn.getbufinfo({ bufmodified = 1 })) do
+    if usable_recovery_buffer(info.bufnr) then
+      modified[#modified + 1] = info.bufnr
+    end
+  end
+  table.sort(modified)
+  if modified[1] then
+    return modified[1]
+  end
+
+  local fallback = {}
+  for buf in pairs(closed_buffers) do
+    if usable_recovery_buffer(buf) then
+      fallback[#fallback + 1] = buf
+    end
+  end
+  table.sort(fallback)
+  return fallback[1]
+end
+
+local function restore_closed_window(closed_buffers)
+  if not agent_is_last_ordinary_window() then
     return
   end
-  vim.api.nvim_open_win(buf, true, { split = "left", win = state.win })
+  local buf = recovery_buffer(closed_buffers)
+  if buf then
+    vim.api.nvim_open_win(buf, true, { split = "left", win = state.win })
+    M.relayout()
+  end
 end
 
 local open_window
 local last_window_guard_installed = false
+local pending_closed_buffers = {}
+local recovery_scheduled = false
 
 --- Hide the nonessential agent before :quit decides whether the current code
 --- window is the last one. This preserves Neovim's normal E37 behavior for a
@@ -129,9 +162,17 @@ local function ensure_last_window_guard()
       if not win_valid() or tonumber(args.match) == state.win then
         return
       end
-      local closed_buf = args.buf
-      -- Defer: during WinClosed the layout still counts the closing window.
+      pending_closed_buffers[args.buf] = true
+      if recovery_scheduled then
+        return
+      end
+      recovery_scheduled = true
+      -- Defer once for the whole close batch: during WinClosed the layout
+      -- still counts closing windows, and :only may emit several callbacks.
       vim.schedule(function()
+        recovery_scheduled = false
+        local closed_buffers = pending_closed_buffers
+        pending_closed_buffers = {}
         if not agent_is_last_ordinary_window() then
           return
         end
@@ -140,7 +181,7 @@ local function ensure_last_window_guard()
           vim.cmd("quit")
         end)
         if not ok then
-          pcall(restore_closed_window, closed_buf)
+          pcall(restore_closed_window, closed_buffers)
         end
       end)
     end,

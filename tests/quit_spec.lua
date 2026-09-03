@@ -125,6 +125,49 @@ local ok, err = xpcall(function()
   )
   eq(2, #vim.api.nvim_tabpage_list_wins(0), "API recovery restores the two-window layout")
 
+  -- :only closes every code window as one batch. Recovery must select the
+  -- modified buffer that prevents the agent from quitting, not whichever
+  -- clean buffer happened to emit the first WinClosed callback.
+  vim.cmd("vnew")
+  local clean_buf = vim.api.nvim_get_current_buf()
+  vim.api.nvim_buf_set_lines(clean_buf, 0, -1, false, { "clean" })
+  vim.bo[clean_buf].modified = false
+  vim.api.nvim_set_current_win(agent_win(term_buf))
+  vim.cmd("only")
+  truthy(
+    vim.wait(100, function()
+      return vim.api.nvim_get_current_buf() == code_buf
+    end),
+    ":only restores the modified buffer instead of a clean closed buffer"
+  )
+  eq(2, #vim.api.nvim_tabpage_list_wins(0), ":only recovery restores one code window")
+  eq(
+    config.window.width,
+    vim.api.nvim_win_get_width(agent_win(term_buf)),
+    ":only recovery restores the configured agent width"
+  )
+
+  -- A closed buffer may be wiped before deferred recovery runs. Select from
+  -- the live modified buffers first rather than retaining the invalid buffer.
+  vim.cmd("enew")
+  local wiped_buf = vim.api.nvim_get_current_buf()
+  vim.bo[wiped_buf].bufhidden = "wipe"
+  vim.api.nvim_set_current_win(agent_win(term_buf))
+  vim.cmd("only")
+  truthy(not vim.api.nvim_buf_is_valid(wiped_buf), ":only wipes the closed scratch buffer")
+  truthy(
+    vim.wait(100, function()
+      return vim.api.nvim_get_current_buf() == code_buf
+    end),
+    ":only recovers a hidden modified buffer after its closed candidate is wiped"
+  )
+  eq(2, #vim.api.nvim_tabpage_list_wins(0), "wiped-buffer recovery restores one code window")
+  eq(
+    config.window.width,
+    vim.api.nvim_win_get_width(agent_win(term_buf)),
+    "wiped-buffer recovery restores the configured agent width"
+  )
+
   -- With another ordinary code window present, :q may close one normally and
   -- neither guard should disturb the agent.
   vim.cmd("vnew")
