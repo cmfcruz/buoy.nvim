@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.0.1](https://github.com/cmfcruz/buoy.nvim/compare/v4.0.0...v4.0.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* preserve modified last code window on quit ([#34](https://github.com/cmfcruz/buoy.nvim/issues/34)) ([3c94033](https://github.com/cmfcruz/buoy.nvim/commit/3c9403396fe41c9557af625fd00cc37e4f4a8533)), closes [#33](https://github.com/cmfcruz/buoy.nvim/issues/33)
+
 ## [4.0.0](https://github.com/cmfcruz/buoy.nvim/compare/v3.2.0...v4.0.0) (2026-09-01)
 
 
