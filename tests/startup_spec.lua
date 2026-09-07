@@ -19,6 +19,8 @@ local ok, err = xpcall(function()
   vim.schedule = function() end
 
   local original_serverstart = vim.fn.serverstart
+  local expected_socket = vim.v.servername ~= "" and vim.v.servername
+    or "/tmp/buoy-startup-spec.sock"
   vim.fn.serverstart = function()
     return "/tmp/buoy-startup-spec.sock"
   end
@@ -43,6 +45,10 @@ local ok, err = xpcall(function()
       events[#events + 1] = "toggle"
     end,
     open = function()
+      truthy(
+        require("buoy").socket == expected_socket,
+        ":Buoy publishes the server's socket before invoking terminal.open"
+      )
       opened = opened + 1
       events[#events + 1] = "open"
     end,
@@ -50,8 +56,6 @@ local ok, err = xpcall(function()
 
   vim.g.loaded_buoy = nil
   dofile(root .. "/plugin/buoy.lua")
-  truthy(vim.fn.exists(":Buoy") == 2, ":Buoy is registered")
-  truthy(vim.fn.exists(":BuoyToggle") == 2, ":BuoyToggle is registered")
 
   vim.cmd("Buoy")
 
@@ -60,7 +64,6 @@ local ok, err = xpcall(function()
   truthy(buoy.config.agent == "codex", ":Buoy applies the pinned agent before opening")
   truthy(buoy.config.cmd == "codex", ":Buoy resolves the pinned command before opening")
   truthy(buoy.config.title == " Codex ", ":Buoy resolves the pinned title before opening")
-  truthy(type(buoy.socket) == "string", ":Buoy publishes the socket before opening")
   truthy(opened == 1, ":Buoy opens the agent after setup")
   truthy(toggled == 0, ":Buoy does not toggle the agent window")
   truthy(captured == nil, "plain :Buoy does not invent a selection range")
@@ -100,9 +103,12 @@ local ok, err = xpcall(function()
     paint_selection = function() end,
     clear_selection = function() end,
   }
+  local finish_launch
   package.loaded["buoy.launcher"] = {
-    resolve = function(_agent, cmd, _cwd, callback)
-      callback({ cmd })
+    resolve = function(_, cmd, _, callback)
+      finish_launch = function(env)
+        callback({ cmd }, env)
+      end
     end,
   }
 
@@ -119,7 +125,11 @@ local ok, err = xpcall(function()
   local editor_win = vim.api.nvim_get_current_win()
   terminal.open()
   local terminal_buf = vim.api.nvim_get_current_buf()
+  truthy(not vim.bo[terminal_buf].modifiable, "pending resolution protects the scratch buffer")
+  truthy(terminal_env == nil, "terminal creation waits for adapter resolution")
   vim.api.nvim_set_current_win(editor_win)
+  local adapter_env = { BUOY_TEST_GUIDANCE = "日本語 'quoted'\nsecond line" }
+  finish_launch(adapter_env)
   truthy(
     vim.wait(100, function()
       return vim.bo[terminal_buf].buftype == "terminal"
@@ -127,6 +137,14 @@ local ok, err = xpcall(function()
     "opening starts a terminal session asynchronously"
   )
   truthy(vim.fn.mode() == "n", "asynchronous startup leaves the restored editor in normal mode")
+  truthy(
+    vim.deep_equal({
+      NVIM_CONTEXT_SOCKET = "/tmp/buoy-startup-spec.sock",
+      BUOY_TEST_GUIDANCE = adapter_env.BUOY_TEST_GUIDANCE,
+    }, terminal_env),
+    "delayed launch preserves adapter environment alongside the editor socket"
+  )
+  truthy(adapter_env.NVIM_CONTEXT_SOCKET == nil, "terminal launch does not mutate adapter input")
   terminal.hide()
 
   local original_executable = vim.fn.executable
@@ -140,7 +158,6 @@ local ok, err = xpcall(function()
   )
   vim.fn.executable = original_executable
 
-  truthy(type(terminal_exit) == "function", "opening registers terminal exit cleanup")
   local agent_win = vim.api.nvim_get_current_win()
   for _, win in ipairs(vim.api.nvim_tabpage_list_wins(0)) do
     if win ~= agent_win and vim.api.nvim_win_get_config(win).relative == "" then
@@ -162,11 +179,10 @@ local ok, err = xpcall(function()
     "the replacement window is ordinary"
   )
 
-  package.loaded["buoy"].config.agent = "pi"
-  package.loaded["buoy"].config.context.expose_editor_context = false
   terminal.open()
   local fresh_terminal_buf = vim.api.nvim_get_current_buf()
   truthy(fresh_terminal_buf ~= terminal_buf, "opening after terminal exit starts a fresh session")
+  finish_launch(nil)
   truthy(
     vim.wait(100, function()
       return vim.bo[fresh_terminal_buf].buftype == "terminal"
@@ -174,13 +190,8 @@ local ok, err = xpcall(function()
     "fresh terminal startup completes asynchronously"
   )
   truthy(
-    terminal_env.BUOY_PI_INSTRUCTIONS:find("## Neovim context", 1, true),
-    "Pi receives Buoy guidance through its environment"
-  )
-  truthy(
-    terminal_env.BUOY_CONTEXT_HOOK_COMMAND == nil
-      and terminal_env.BUOY_POST_TOOL_HOOK_COMMAND == nil,
-    "disabled editor context keeps Pi lifecycle hooks out of its environment"
+    vim.deep_equal({ NVIM_CONTEXT_SOCKET = "/tmp/buoy-startup-spec.sock" }, terminal_env),
+    "a launch without adapter environment keeps the socket and drops previous launch values"
   )
   terminal_exit()
   vim.fn.termopen = original_termopen

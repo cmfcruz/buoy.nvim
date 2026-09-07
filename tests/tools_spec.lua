@@ -232,17 +232,17 @@ local ok, err = xpcall(function()
   )
   context_config.expose_diagnostics = true
 
-  -- Navigation is never gated: even with both read switches off, dispatch does
-  -- not report CAPABILITY_DISABLED for set_cursor_position.
+  -- Navigation must still succeed with every context surface disabled.
   context_config.expose_buffers = false
   context_config.expose_diagnostics = false
-  truthy(
-    tools.dispatch("set_cursor_position", { file = big_file, line = 1 }).code
-      ~= "CAPABILITY_DISABLED",
-    "set_cursor_position is never gated by the expose switches"
-  )
+  context_config.expose_editor_context = false
+  local moved = tools.dispatch("set_cursor_position", { file = big_file, line = 3, col = 2 })
+  eq("cursor_position", moved.kind, "navigation succeeds with all context switches off")
+  eq(big_file, vim.api.nvim_buf_get_name(0), "ungated navigation opens the requested buffer")
+  eq({ 3, 1 }, vim.api.nvim_win_get_cursor(0), "ungated navigation moves to the requested position")
   context_config.expose_buffers = true
   context_config.expose_diagnostics = true
+  context_config.expose_editor_context = true
 end, debug.traceback)
 
 vim.fn.delete(temp, "rf")

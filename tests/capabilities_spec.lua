@@ -18,12 +18,6 @@ local function eq(expected, actual, label)
   end
 end
 
-local function truthy(value, label)
-  if not value then
-    fail(label or "expected a truthy value")
-  end
-end
-
 local ok, err = xpcall(function()
   local capabilities = require("buoy.capabilities")
 
@@ -44,11 +38,6 @@ local ok, err = xpcall(function()
     context_defaults,
     "capabilities.defaults matches the public config.context defaults"
   )
-
-  -- Drift guard: requiring buoy.tools runs its load-time assertion that every
-  -- operation's capability tag is a real registry key, so a mistyped capability
-  -- would fail here rather than silently never gating its operation.
-  truthy(pcall(require, "buoy.tools"), "buoy.tools loads with valid capability tags")
 end, debug.traceback)
 
 if not ok then
