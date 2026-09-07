@@ -75,7 +75,7 @@ local ok, err = xpcall(function()
   }
 
   local original_termopen = vim.fn.termopen
-  vim.fn.termopen = function(_, _opts)
+  vim.fn.termopen = function()
     return vim.api.nvim_open_term(0, {})
   end
 

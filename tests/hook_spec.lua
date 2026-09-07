@@ -41,24 +41,22 @@ local ok, err = xpcall(function()
   context.state.filetype = "lua"
   context.state.cursor = { line = 1, col = 1 }
 
-  --- Runs a bridge script as a real headless child while this instance keeps
-  --- serving RPC (vim.wait pumps the main loop), mirroring how the agent
-  --- spawns the hook in production.
-  local function run_script(script, mode, env, leave_stdin_open)
+  --- Runs Buoy's published hook command shape as a real headless child while
+  --- this instance keeps serving RPC (vim.wait pumps the main loop).
+  local function run_script(script, mode, env, leave_stdin_open, args)
     local stdout, exit_code = {}, nil
-    local job = vim.fn.jobstart(
-      { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", script, mode },
-      {
-        env = env,
-        stdout_buffered = true,
-        on_stdout = function(_, data)
-          stdout = data
-        end,
-        on_exit = function(_, code)
-          exit_code = code
-        end,
-      }
-    )
+    local argv = { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", script, mode }
+    vim.list_extend(argv, args or {})
+    local job = vim.fn.jobstart(argv, {
+      env = env,
+      stdout_buffered = true,
+      on_stdout = function(_, data)
+        stdout = data
+      end,
+      on_exit = function(_, code)
+        exit_code = code
+      end,
+    })
     truthy(job > 0, "child job starts")
     if not leave_stdin_open then
       vim.fn.chanclose(job, "stdin")
@@ -88,6 +86,63 @@ local ok, err = xpcall(function()
   eq(vim.fn.getcwd(), snapshot.cwd, "snapshot carries the cwd")
   eq(file, snapshot.current.file, "snapshot carries the current file")
   eq({ line = 1, col = 1 }, snapshot.current.cursor, "snapshot carries the cursor")
+
+  context.state.cursor = { line = 1, col = 4 }
+  context.capture_command_selection(1, 1)
+  eq("local x = 1", context.state.selection.text, "fixture captures a nonempty selection")
+  stdout, code = run_script(bridge, "hook-context", { NVIM_CONTEXT_SOCKET = addr })
+  eq(0, code, "follow-up context hook succeeds")
+  snapshot = vim.json.decode(stdout[2])
+  eq({ line = 1, col = 4 }, snapshot.current.cursor, "each hook invocation reads fresh context")
+  eq(context.state.selection, snapshot.selection, "shared hook includes the captured selection")
+
+  context.clear_selection()
+  stdout, code = run_script(bridge, "hook-context", { NVIM_CONTEXT_SOCKET = addr })
+  eq(vim.NIL, vim.json.decode(stdout[2]).selection, "shared hook drops a cleared selection")
+
+  local context_config = require("buoy").config.context
+  context_config.expose_editor_context = false
+  stdout, code = run_script(bridge, "hook-context", { NVIM_CONTEXT_SOCKET = addr })
+  context_config.expose_editor_context = true
+  eq(0, code, "a stale shared context hook remains fail-open")
+  eq({ "" }, stdout, "a stale shared context hook cannot disclose disabled context")
+
+  -- hook-custom is shared bridge plumbing. Give it a tiny local handler so
+  -- the test proves filename dispatch and context-function injection without
+  -- depending on any particular agent's event format.
+  local custom_root = temp .. "/custom bridge"
+  local custom_bridge = custom_root .. "/bridge/buoy.lua"
+  local custom_rpc = custom_root .. "/bridge/nvim_rpc.lua"
+  local custom_handler = custom_root .. "/lua/buoy/custom/test_hook.lua"
+  vim.fn.mkdir(vim.fn.fnamemodify(custom_handler, ":h"), "p")
+  vim.fn.mkdir(vim.fn.fnamemodify(custom_bridge, ":h"), "p")
+  vim.fn.writefile(vim.fn.readfile(bridge), custom_bridge)
+  vim.fn.writefile(vim.fn.readfile(root .. "/bridge/nvim_rpc.lua"), custom_rpc)
+  vim.fn.writefile({
+    "return {",
+    "  run = function(context_text)",
+    "    io.write(tostring(context_text() ~= nil) .. '\\n'); io.flush()",
+    "  end,",
+    "}",
+  }, custom_handler)
+  stdout, code = run_script(
+    custom_bridge,
+    "hook-custom",
+    { NVIM_CONTEXT_SOCKET = addr },
+    false,
+    { "test_hook.lua" }
+  )
+  eq(0, code, "custom hook exits successfully")
+  eq({ "true", "" }, stdout, "custom hook supplies a live context function to its handler")
+  stdout, code = run_script(
+    custom_bridge,
+    "hook-custom",
+    { NVIM_CONTEXT_SOCKET = addr },
+    false,
+    { "../test_hook.lua", "should not run" }
+  )
+  eq(0, code, "unsafe custom handler names stay fail-open")
+  eq({ "" }, stdout, "unsafe custom handler names cannot escape the custom directory")
 
   vim.fn.writefile({ "local x = 2" }, file)
   stdout, code = run_script(bridge, "hook-checktime", { NVIM_CONTEXT_SOCKET = addr }, true)
@@ -146,9 +201,8 @@ local ok, err = xpcall(function()
     "checktime hook does not reload a buffer with unsaved edits"
   )
 
-  -- With no reachable Neovim the hook must print nothing and still exit 0:
-  -- Claude Code treats exit 2 as "block the prompt", and any non-zero exit
-  -- surfaces error noise. $NVIM is overridden because jobstart() sets it
+  -- With no reachable Neovim, Buoy's hook contract is fail-open: it prints
+  -- nothing and exits 0. $NVIM is overridden because jobstart() sets it
   -- automatically for children of this test instance.
   local missing = temp .. "/missing.sock"
   stdout, code = run_script(bridge, "hook-context", {

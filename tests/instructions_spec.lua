@@ -31,8 +31,6 @@ end
 local ok, err = xpcall(function()
   local instructions = require("buoy.instructions")
   local neovim_instructions = instructions.neovim_instructions()
-  local consolidated =
-    instructions.append_instructions("first line\nsecond line", neovim_instructions)
   truthy(
     neovim_instructions:find("attached to every user prompt", 1, true),
     "Buoy guidance states that editor context arrives with every prompt"
@@ -69,22 +67,6 @@ local ok, err = xpcall(function()
     neovim_instructions:find("Never look up the socket path", 1, true),
     "Buoy guidance preserves authoritative socket routing"
   )
-  eq(
-    "first line\nsecond line\n\n" .. neovim_instructions,
-    consolidated,
-    "existing multiline instructions are preserved"
-  )
-  eq(
-    neovim_instructions,
-    instructions.append_instructions("", neovim_instructions),
-    "empty instructions use only Buoy guidance"
-  )
-  eq(
-    neovim_instructions,
-    instructions.append_instructions(nil, neovim_instructions),
-    "null instructions use only Buoy guidance"
-  )
-
   -- The plugin root may be an installed (possibly symlinked) copy rather than
   -- this checkout, so assert the command's shape instead of the exact path.
   local cli_prefix = instructions.cli_prefix()
@@ -112,66 +94,6 @@ local ok, err = xpcall(function()
   truthy(
     neovim_instructions:find(cli_prefix, 1, true),
     "Buoy guidance includes the exact CLI prefix"
-  )
-
-  local fake_context_hook = "'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-context"
-  local fake_post_tool_hook = "'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-checktime"
-  local codex_argv =
-    instructions.codex_argv("codex-custom", consolidated, fake_context_hook, fake_post_tool_hook)
-  eq("codex-custom", codex_argv[1], "Codex command is preserved")
-  eq("-c", codex_argv[2], "Codex receives a config override")
-  local encoded = codex_argv[3]:sub(#"developer_instructions=" + 1)
-  eq(consolidated, vim.json.decode(encoded), "multiline Codex instructions are safely encoded")
-  eq(
-    {
-      "-c",
-      'hooks.UserPromptSubmit=[{hooks=[{type="command",'
-        .. "command=\"'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-context\",timeout=10}]}]",
-      "-c",
-      'hooks.PostToolUse=[{matcher="Edit|Write",hooks=[{type="command",'
-        .. "command=\"'/path/to/nvim' --headless -l '/path/to/buoy.lua' hook-checktime\",timeout=10}]}]",
-    },
-    { unpack(codex_argv, 4) },
-    "Codex argv attaches its prompt and PostToolUse hooks after guidance"
-  )
-
-  local pi_argv = instructions.pi_argv("pi-custom")
-  eq("pi-custom", pi_argv[1], "Pi command is preserved")
-  eq("--extension", pi_argv[2], "Pi receives the extension flag")
-  truthy(
-    pi_argv[3]:find("/bridge/pi_hooks%.ts$"),
-    "Pi argv attaches the bundled lifecycle-hook extension"
-  )
-  truthy(
-    not vim.list_contains(pi_argv, "--append-system-prompt"),
-    "Pi keeps its discovered append-system instructions"
-  )
-
-  local claude_argv = instructions.claude_argv(
-    "claude-custom",
-    neovim_instructions,
-    fake_context_hook,
-    fake_post_tool_hook
-  )
-  eq("claude-custom", claude_argv[1], "Claude command is preserved")
-  eq("--append-system-prompt", claude_argv[2], "Claude receives the system prompt flag")
-  eq(neovim_instructions, claude_argv[3], "Claude receives the Buoy guidance")
-  eq("--settings", claude_argv[4], "Claude receives the settings flag")
-  local settings = vim.json.decode(claude_argv[5])
-  eq(
-    { { hooks = { { type = "command", command = fake_context_hook, timeout = 10 } } } },
-    settings.hooks.UserPromptSubmit,
-    "Claude registers the context hook for every prompt"
-  )
-  eq(
-    {
-      {
-        matcher = "Edit|Write",
-        hooks = { { type = "command", command = fake_post_tool_hook, timeout = 10 } },
-      },
-    },
-    settings.hooks.PostToolUse,
-    "Claude registers the checktime hook after every native edit or write"
   )
 
   -- Capability switches drop disabled surfaces from the guidance. Navigation is
@@ -221,11 +143,9 @@ local ok, err = xpcall(function()
     "navigation-only guidance keeps the 1-based coordinate contract"
   )
   truthy(
-    navigation_only:find(
-      "When `--file` is omitted, commands target the user's\ncurrent file",
-      1,
-      true
-    ),
+    navigation_only
+      :gsub("%s+", " ")
+      :find("When `--file` is omitted, commands target the user's current file", 1, true),
     "navigation-only guidance keeps the current-file default"
   )
   truthy(
@@ -249,24 +169,10 @@ local ok, err = xpcall(function()
     "navigation-only guidance omits the diagnostics continuation argument"
   )
 
-  -- Nil hook commands omit both lifecycle hooks from the argv builders that
-  -- configure them directly.
-  local claude_no_hook = instructions.claude_argv("claude-custom", neovim_instructions, nil, nil)
-  truthy(
-    not vim.list_contains(claude_no_hook, "--settings"),
-    "Claude omits --settings when the hook is disabled"
-  )
-  local codex_no_hook = instructions.codex_argv("codex-custom", consolidated, nil, nil)
-  for _, entry in ipairs(codex_no_hook) do
-    truthy(
-      type(entry) ~= "string"
-        or (
-          not entry:find("hooks.UserPromptSubmit", 1, true)
-          and not entry:find("hooks.PostToolUse", 1, true)
-        ),
-      "Codex omits lifecycle hooks when disabled"
-    )
-  end
+  local integration = instructions.integration({ expose_editor_context = false })
+  eq(no_context, integration.guidance, "shared integration returns capability-aware guidance")
+  eq(nil, integration.context_hook, "shared integration omits the disabled context hook")
+  eq(nil, integration.post_tool_hook, "shared integration omits the disabled refresh hook")
 end, debug.traceback)
 
 if not ok then

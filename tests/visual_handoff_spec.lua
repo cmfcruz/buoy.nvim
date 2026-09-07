@@ -37,17 +37,21 @@ end
 
 local temp = vim.fn.tempname()
 vim.fn.mkdir(temp, "p")
+local original_termopen = vim.fn.termopen
 
 local ok, err = xpcall(function()
-  -- Stub the launcher so the terminal hosts a quiet long-lived process instead
-  -- of a real agent CLI; the focus/mode behavior under test is agent-agnostic.
+  -- Exercise Buoy's terminal-buffer lifecycle without launching an external
+  -- process. The focus and Visual-mode contracts do not depend on agent output.
   package.loaded["buoy.launcher"] = {
-    resolve = function(_, _, _, callback)
-      callback({ "sleep", "300" })
+    resolve = function(_, cmd, _, callback)
+      callback({ cmd })
     end,
   }
+  vim.fn.termopen = function()
+    return vim.api.nvim_open_term(0, {})
+  end
 
-  require("buoy").setup({ agent = "claude", cmd = "sleep", startup = { open = false } })
+  require("buoy").setup({ agent = "claude", cmd = vim.o.shell, startup = { open = false } })
 
   local file = temp .. "/main.txt"
   vim.fn.writefile({ "line 1", "line 2", "line 3", "line 4" }, file)
@@ -123,6 +127,7 @@ local ok, err = xpcall(function()
   eq(3, marks[1][4].end_col, "the charwise highlight ends at the exclusive end column")
 end, debug.traceback)
 
+vim.fn.termopen = original_termopen
 vim.fn.delete(temp, "rf")
 
 if not ok then

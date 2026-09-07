@@ -106,7 +106,7 @@ local ok, err = xpcall(function()
   context.clear_selection()
   local unavailable = tools.editor_context()
   eq(expected_cwd, unavailable.cwd, "cwd survives missing current-file context")
-  truthy(type(unavailable.buffers) == "table", "buffers remains an array-like table")
+  eq(snapshot.buffers, unavailable.buffers, "missing current context preserves the buffer list")
   eq({
     file = vim.NIL,
     filetype = vim.NIL,

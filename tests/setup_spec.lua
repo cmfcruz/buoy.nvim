@@ -49,7 +49,7 @@ local ok, err = xpcall(function()
     return "/tmp/buoy-setup-spec.sock"
   end
   local original_executable = vim.fn.executable
-  local executables = { claude = 1, codex = 1, pi = 1 }
+  local executables = { claude = 1, codex = 1, pi = 1, copilot = 1 }
   vim.fn.executable = function(cmd)
     return executables[cmd] or 0
   end
@@ -80,7 +80,7 @@ local ok, err = xpcall(function()
   buoy.ensure_setup()
   eq(1, #notices, "ensure_setup() after setup stays silent")
 
-  -- Zero-config setup prefers Claude when both supported agents are installed
+  -- Zero-config setup prefers Claude when all supported agents are installed
   -- and is also final for the session.
   buoy = fresh_buoy()
   buoy.ensure_setup()
@@ -89,7 +89,7 @@ local ok, err = xpcall(function()
   eq("claude", buoy.config.agent, "explicit setup cannot replace zero-config setup")
   eq(2, #notices, "reconfiguring zero-config setup notifies the user")
 
-  -- Automatic setup falls back to Codex, then Pi, then to Claude's command when
+  -- Automatic setup falls back to Codex, then Pi, then Copilot, then Claude when
   -- no supported CLI exists so opening the window can report the missing executable.
   executables.claude = 0
   buoy = fresh_buoy()
@@ -102,6 +102,11 @@ local ok, err = xpcall(function()
   eq("pi", buoy.config.agent, "automatic setup falls back to Pi")
 
   executables.pi = 0
+  buoy = fresh_buoy()
+  buoy.ensure_setup()
+  eq("copilot", buoy.config.agent, "automatic setup falls back to Copilot")
+
+  executables.copilot = 0
   buoy = fresh_buoy()
   buoy.ensure_setup()
   eq("claude", buoy.config.agent, "automatic setup falls back to the Claude command")
@@ -117,6 +122,18 @@ local ok, err = xpcall(function()
   eq("pi", buoy.config.agent, "Pi can be selected explicitly")
   eq("pi", buoy.config.cmd, "Pi cmd derives from the selected preset")
   eq(" Pi ", buoy.config.title, "Pi title derives from the selected preset")
+
+  buoy = fresh_buoy()
+  buoy.setup({ agent = "copilot" })
+  eq("copilot", buoy.config.cmd, "Copilot cmd derives from the preset")
+  eq(" GitHub Copilot ", buoy.config.title, "Copilot title derives from the preset")
+
+  buoy = fresh_buoy()
+  vim.env.BUOY_AGENT = "copilot"
+  buoy.setup({ agent = "claude", cmd = "copilot-dev" })
+  eq("copilot", buoy.config.agent, "environment override selects Copilot")
+  eq("copilot-dev", buoy.config.cmd, "Copilot supports a custom executable")
+  vim.env.BUOY_AGENT = nil
 
   -- A rejected config leaves automatic startup free to apply valid defaults.
   buoy = fresh_buoy()

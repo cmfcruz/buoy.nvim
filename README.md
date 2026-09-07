@@ -11,15 +11,16 @@
 
 > Floats or docks — stays anchored to the code.
 
-A dedicated Neovim window for Claude Code or Codex, with live editor context on
-every prompt.
+A dedicated Neovim window for Claude Code, Codex, Pi, or GitHub Copilot CLI, with
+live editor context on every prompt.
 
 <p align="center">
   <img src="docs/demo.gif" alt="buoy.nvim docked beside a Neovim buffer with an agent mid-turn" width="900">
 </p>
 
-- **The official agent TUI, docked in Neovim.** Run Claude Code, Codex, or Pi in a
-  split or float that stays anchored beside your code — no chat UI to maintain.
+- **The official agent TUI, docked in Neovim.** Run Claude Code, Codex, Pi, or
+  GitHub Copilot CLI in a split or float that stays anchored beside your code —
+  no chat UI to maintain.
 - **Context on every prompt.** A prompt hook automatically attaches the current
   file, cursor, visual selection, and open buffers to what you send — no tool
   call, no extra round trip.
@@ -36,7 +37,8 @@ every prompt.
 ## Requirements
 
 - Neovim 0.11+ (required for exact visual-selection capture)
-- The Claude Code, Codex, and/or Pi CLI on your `$PATH`
+- A supported CLI on your `$PATH`: Claude Code, Codex, Pi, or standalone GitHub
+  Copilot CLI 1.0.83+ (`copilot`, not the older `gh copilot` extension)
 
 ## Install
 
@@ -65,7 +67,7 @@ Start Neovim and buoy opens the selected agent's TUI automatically while
 leaving your editor, file explorer, dashboard, or other startup window focused.
 A startup reminder shows the layout-aware shortcuts (by default `<F2>` and
 `<S-F2>`). Buoy auto-detects which agent CLI is on your `$PATH`, preferring
-Claude Code, then Codex, then Pi; no config file is required.
+Claude Code, then Codex, then Pi, then GitHub Copilot; no config file is required.
 
 On Windows, the terminal UI works normally, but buoy does not attach its POSIX
 bridge hooks or live editor CLI. Buoy warns once when the agent starts.
@@ -84,13 +86,13 @@ setup — it is configured at launch; see
 ## Configuration
 
 buoy works with zero configuration: it auto-detects your agent CLI (Claude
-Code first, then Codex, then Pi), opens it after startup, and maps `<F2>`. Call
-`setup()` only to override a default — put it in your `init.lua` (`~/.config/nvim/init.lua`, or
-`~/AppData/Local/nvim/init.lua` on Windows):
+Code first, then Codex, then Pi, then Copilot), opens it after startup, and maps
+`<F2>`. Call `setup()` only to override a default — put it in your `init.lua`
+(`~/.config/nvim/init.lua`, or `~/AppData/Local/nvim/init.lua` on Windows):
 
 ```lua
 require("buoy").setup({
-  agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex" | "pi"
+  agent = "codex",            -- pin the agent: "auto" (default) | "claude" | "codex" | "pi" | "copilot"
   keymaps = {
     primary = "<F2>",         -- focus in a vsplit, show/hide in a float; false to disable
     secondary = "<S-F2>",     -- show/hide in a vsplit, focus in a float; false to disable
@@ -123,10 +125,10 @@ require("buoy").setup({
   mappings, and describes the actions for the split or float that actually
   opened. It is dismissed by the first configured Buoy keypress or replaced
   naturally by the next command or message.
-- **Switch agents:** set `agent = "codex"` or `agent = "pi"`. (With the default
-  `"auto"`, buoy uses Pi too if it's the only supported CLI on your `$PATH`.)
+- **Switch agents:** set `agent = "codex"`, `agent = "pi"`, or `agent = "copilot"`.
+  With `"auto"`, buoy selects the first installed CLI in the order above.
 - **Override per session:** set the `BUOY_AGENT` environment variable
-  (e.g. `BUOY_AGENT=pi nvim`) — it takes precedence over the `agent`
+  (e.g. `BUOY_AGENT=copilot nvim`) — it takes precedence over the `agent`
   configured in `setup()`.
 - **Config applies at startup:** buoy initializes once per Neovim session —
   the first `setup()` (or the zero-config defaults, shortly after startup)
@@ -193,9 +195,9 @@ require("buoy").setup({
 
 ## Automatic editor hooks
 
-On Linux and macOS, buoy registers its unified `bridge/buoy.lua` CLI in
-`hook-context` mode with each supported agent. Before the model sees each
-prompt, the hook prints a focused snapshot of your editor state — cwd, current
+On Linux and macOS, buoy registers its unified `bridge/buoy.lua` CLI with each
+supported agent. Before the model sees each prompt, a hook supplies a focused
+snapshot of your editor state — cwd, current
 file, cursor, visual selection, and open buffers — which the agent attaches as
 context. Enrichment is deterministic (there is no tool call for the model to
 skip) and costs no extra inference round trip.
@@ -217,6 +219,19 @@ Hook wiring is agent-specific:
 - **Pi:** buoy loads a bundled `--extension` that injects the prompt snapshot
   from `before_agent_start` and refreshes buffers from `tool_result` after Pi's
   native `edit` or `write` tools.
+- **GitHub Copilot:** buoy passes a temporary local plugin through `--plugin-dir`.
+  Its `userPromptTransformed` hook appends the snapshot to the model-facing
+  prompt, preserving the original content. Its `postToolUse` hook refreshes
+  buffers after native `create`, `edit`, `str_replace_editor`, or `apply_patch`
+  calls. The plugin is reused within the Neovim session and removed with
+  Neovim's temporary files on exit; repository and global Copilot settings are
+  not changed. Disabling `expose_editor_context` omits both hooks.
+
+  Copilot CLI 1.0.83 does not compose the outputs of multiple
+  `userPromptTransformed` hooks: each receives the same original prompt, and a
+  later replacement wins. A user or repository hook that also rewrites this
+  event can therefore conflict with buoy's prompt snapshot. Other hooks and all
+  discovered instruction sources continue to compose normally.
 
 If either hook cannot reach your Neovim, it silently does nothing and never
 blocks the agent.
@@ -257,7 +272,13 @@ asks `codex app-server` for the effective `developer_instructions` at Neovim's
 working directory, then appends its guidance without changing Codex's normal
 configuration precedence. For Pi, the bundled extension appends buoy's guidance
 to Pi's assembled system prompt, preserving discovered `APPEND_SYSTEM.md`
-instructions.
+instructions. For Copilot, buoy writes a temporary `buoy.instructions.md` and
+appends its directory to the terminal's `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`,
+preserving existing directories and normal instruction discovery. These
+instructions stay available when automatic editor context is disabled, and buoy
+does not register a session-start hook that could replace user-hook context.
+Copilot older than 1.0.83, or a version check that fails or takes more than two
+seconds, produces a warning and launches the terminal without live integration.
 
 If the Codex configuration cannot be resolved within two seconds, buoy shows a
 warning and launches Codex without a developer-instructions override. This
@@ -289,35 +310,8 @@ configuration resolution.
 - `open_diff` / in-editor approval is intentionally out of scope: the
   official TUI already renders diffs and approvals, which is the point.
 
-## Development
+## Contributing
 
-Contributions go through pull requests; `main` is protected by CI.
-
-- **Tests** — run every headless spec with:
-
-  ```sh
-  for spec in tests/*_spec.lua; do
-    nvim --headless -u NONE -i NONE -l "$spec"
-  done
-  ```
-
-- **Formatting** — [StyLua](https://github.com/JohnnyMorganz/StyLua).
-  Run `stylua .` (or `stylua --check .` to verify).
-- **Linting** — [Selene](https://github.com/Kampfkarren/selene). Run
-  `selene .`. The Neovim runtime is described in `vim.yml`.
-- **Pre-commit** — `pip install pre-commit && pre-commit install` wires
-  StyLua and a few hygiene hooks into your commits (StyLua's binary is
-  fetched automatically; install Selene separately if you want it locally).
-
-CI (`.github/workflows/ci.yml`) runs the tests, formatting check, and lint on
-every PR.
-
-### Releases
-
-Versioning is automated with
-[Release Please](https://github.com/googleapis/release-please) using
-[Conventional Commits](https://www.conventionalcommits.org/). Merging
-`feat:` / `fix:` commits to `main` opens a release PR that bumps
-`version.txt`, updates the changelog, and — once merged — tags the
-release. Use `feat:`/`fix:` in commit subjects (and `feat!:` or a
-`BREAKING CHANGE:` footer for breaking changes).
+See [AGENTS.md](https://github.com/cmfcruz/buoy.nvim/blob/main/AGENTS.md) for the shared
+contributor guide, including architecture, development commands, tests, style, pull requests,
+and releases.
