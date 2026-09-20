@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/cmfcruz/buoy.nvim/compare/v4.0.1...v4.1.0) (2026-09-20)
+
+
+### Features
+
+* add GitHub Copilot CLI support ([#36](https://github.com/cmfcruz/buoy.nvim/issues/36)) ([b378e2f](https://github.com/cmfcruz/buoy.nvim/commit/b378e2f0724369b34bb0c7aa8203ac92d2bd5763))
+
 ## [4.0.1](https://github.com/cmfcruz/buoy.nvim/compare/v4.0.0...v4.0.1) (2026-09-03)
 
 
