@@ -1,7 +1,7 @@
 --- buoy.nvim
 --- Floats or docks — stays anchored to the code.
---- An agent's official TUI (Codex / Claude Code / Pi) in a float or split, plus
---- live editor context and navigation through a private agent CLI.
+--- An agent's official TUI (Codex / Claude Code / Pi / Copilot) in a float or
+--- split, plus live editor context and navigation through a private agent CLI.
 
 if vim.fn.has("nvim-0.11") == 0 then
   error("buoy.nvim requires Neovim 0.11 or newer")
@@ -10,7 +10,7 @@ end
 local M = {}
 
 M.config = {
-  agent = "auto", -- "auto" | "claude" | "codex" | "pi"; auto prefers an installed CLI (Claude Code first)
+  agent = "auto", -- "auto" | "claude" | "codex" | "pi" | "copilot"; Claude Code first
   cmd = nil, -- override the agent's default binary (optional)
   window = {
     style = "auto", -- "auto" | "vsplit" | "float"; auto splits when the code stays wider than width, else floats
@@ -32,34 +32,6 @@ M.config = {
   -- no module re-declares them (see that file for per-key descriptions).
   context = vim.deepcopy(require("buoy.capabilities").defaults),
 }
-
--- Built-in agent presets. `cmd` is the CLI launched in the agent window;
--- `title` is its float border label. Both are overridable via setup() opts.
-local AGENTS = {
-  codex = { cmd = "codex", title = " Codex " },
-  claude = { cmd = "claude", title = " Claude Code " },
-  pi = { cmd = "pi", title = " Pi " },
-}
-
---- Resolve the `"auto"` agent to a concrete one: prefer Claude Code, then
---- Codex, then Pi, by what's actually on `$PATH`. Falls back to Claude Code to
---- give `open()` a concrete missing command to report if no supported CLI is
---- installed. An explicit `agent = "codex"|"claude"|"pi"` skips this.
-local function resolve_agent(agent)
-  if agent ~= "auto" then
-    return agent
-  end
-  if vim.fn.executable("claude") == 1 then
-    return "claude"
-  end
-  if vim.fn.executable("codex") == 1 then
-    return "codex"
-  end
-  if vim.fn.executable("pi") == 1 then
-    return "pi"
-  end
-  return "claude"
-end
 
 local function shifted_function_key_alias(key)
   if type(key) ~= "string" then
@@ -231,13 +203,12 @@ function M.setup(opts)
     config.agent = env_agent
   end
 
-  config.agent = resolve_agent(config.agent)
-  local preset = AGENTS[config.agent]
+  local agents = require("buoy.agents")
+  config.agent = agents.resolve(config.agent)
+  local preset = agents.get(config.agent)
   if not preset then
     error(
-      ("buoy: unknown agent %q (expected 'auto', 'codex', 'claude', or 'pi')"):format(
-        tostring(config.agent)
-      )
+      ("buoy: unknown agent %q (expected %s)"):format(tostring(config.agent), agents.expected())
     )
   end
   -- Resolve the launch command and float title; an explicit override wins.

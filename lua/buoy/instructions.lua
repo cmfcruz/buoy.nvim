@@ -4,11 +4,8 @@ local source = debug.getinfo(1, "S").source
 local module_file = source:sub(1, 1) == "@" and source:sub(2) or source
 local plugin_root = vim.fn.fnamemodify(module_file, ":p:h:h:h")
 
-function M.append_instructions(existing, additional)
-  if type(existing) == "string" and existing ~= "" then
-    return existing .. "\n\n" .. additional
-  end
-  return additional
+function M.plugin_path(relative)
+  return plugin_root .. "/" .. relative
 end
 
 --- POSIX single-quoting. Not vim.fn.shellescape(): that tracks the user's
@@ -20,12 +17,27 @@ end
 local function bridge_command(mode)
   local command = shell_quote(vim.v.progpath)
     .. " --headless -u NONE -i NONE -l "
-    .. shell_quote(plugin_root .. "/bridge/buoy.lua")
+    .. shell_quote(M.plugin_path("bridge/buoy.lua"))
   return mode and (command .. " " .. mode) or command
 end
 
 function M.cli_prefix()
   return bridge_command()
+end
+
+--- Direct argv for hosts that can launch hooks without a shell.
+function M.bridge_argv(mode)
+  return {
+    vim.v.progpath,
+    "--headless",
+    "-u",
+    "NONE",
+    "-i",
+    "NONE",
+    "-l",
+    M.plugin_path("bridge/buoy.lua"),
+    mode,
+  }
 end
 
 --- Build the Neovim-integration guidance, including only the capabilities that
@@ -104,7 +116,7 @@ function M.neovim_instructions(opts)
   return table.concat(parts, "\n\n")
 end
 
---- Shell command both agents register as the UserPromptSubmit hook. Kept
+--- Shell command used by adapters that register a UserPromptSubmit hook. Kept
 --- stable across sessions (no per-session socket embedded) so Codex's
 --- persisted hook trust survives relaunches; the hook script discovers the
 --- socket from the environment exported in terminal.lua.
@@ -116,85 +128,16 @@ function M.post_tool_hook_command()
   return bridge_command("hook-checktime")
 end
 
-function M.pi_extension_path()
-  return plugin_root .. "/bridge/pi_hooks.ts"
-end
-
--- Render a TOML basic string. vim.json.encode() is the wrong boundary here:
--- Codex parses the value as TOML, whose valid escapes are narrower than JSON's.
--- TOML basic strings permit only
--- \b \t \n \f \r \" \\ \uXXXX \UXXXXXXXX, so escape backslash, double quote,
--- and control bytes (0x00-0x1F and 0x7F) and leave everything else, including
--- "/", verbatim.
-local function toml_basic_string(s)
-  local shorthand = {
-    ["\\"] = "\\\\",
-    ['"'] = '\\"',
-    ["\b"] = "\\b",
-    ["\t"] = "\\t",
-    ["\n"] = "\\n",
-    ["\f"] = "\\f",
-    ["\r"] = "\\r",
-  }
-  local escaped = s:gsub('[%z\1-\31\127"\\]', function(c)
-    return shorthand[c] or string.format("\\u%04x", c:byte())
-  end)
-  return '"' .. escaped .. '"'
-end
-
-function M.codex_argv(cmd, developer_instructions, context_hook_command, post_tool_hook_command)
-  local argv = { cmd }
-  if developer_instructions then
-    vim.list_extend(argv, {
-      "-c",
-      "developer_instructions=" .. toml_basic_string(developer_instructions),
-    })
+--- Shared material every adapter needs. Agents decide how to attach the
+--- guidance and lifecycle commands to their own CLI or extension API.
+function M.integration(opts)
+  local caps = require("buoy.capabilities").resolve(opts)
+  local integration = { guidance = M.neovim_instructions(caps) }
+  if caps.expose_editor_context then
+    integration.context_hook = M.hook_command()
+    integration.post_tool_hook = M.post_tool_hook_command()
   end
-  -- The structure is hand-written TOML (inline tables); toml_basic_string()
-  -- renders the command as a valid TOML basic string on every Neovim version.
-  if context_hook_command then
-    vim.list_extend(argv, {
-      "-c",
-      'hooks.UserPromptSubmit=[{hooks=[{type="command",command=' .. toml_basic_string(
-        context_hook_command
-      ) .. ",timeout=10}]}]",
-    })
-  end
-  if post_tool_hook_command then
-    vim.list_extend(argv, {
-      "-c",
-      'hooks.PostToolUse=[{matcher="Edit|Write",hooks=[{type="command",command='
-        .. toml_basic_string(post_tool_hook_command)
-        .. ",timeout=10}]}]",
-    })
-  end
-  return argv
-end
-
-function M.pi_argv(cmd)
-  return { cmd, "--extension", M.pi_extension_path() }
-end
-
-function M.claude_argv(cmd, system_instructions, context_hook_command, post_tool_hook_command)
-  local argv = { cmd, "--append-system-prompt", system_instructions }
-  local hooks = {}
-  if context_hook_command then
-    hooks.UserPromptSubmit = {
-      { hooks = { { type = "command", command = context_hook_command, timeout = 10 } } },
-    }
-  end
-  if post_tool_hook_command then
-    hooks.PostToolUse = {
-      {
-        matcher = "Edit|Write",
-        hooks = { { type = "command", command = post_tool_hook_command, timeout = 10 } },
-      },
-    }
-  end
-  if next(hooks) then
-    vim.list_extend(argv, { "--settings", vim.json.encode({ hooks = hooks }) })
-  end
-  return argv
+  return integration
 end
 
 return M

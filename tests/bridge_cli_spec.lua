@@ -31,8 +31,21 @@ local ok, err = xpcall(function()
   local addr = vim.fn.serverstart()
   truthy(addr and addr ~= "", "test instance exposes an RPC socket")
 
-  -- A directory with a space exercises path handling end to end.
-  local spaced_dir = temp .. "/with space"
+  -- Exercise file arguments and the installation path independently. Loading
+  -- the real instruction builder from this copy makes its generated commands
+  -- target the relocated bridge, including its sibling RPC helper.
+  local install = temp .. "/buoy's 日本語 checkout"
+  for _, relative in ipairs({
+    "lua/buoy/instructions.lua",
+    "bridge/buoy.lua",
+    "bridge/nvim_rpc.lua",
+  }) do
+    local destination = install .. "/" .. relative
+    vim.fn.mkdir(vim.fn.fnamemodify(destination, ":h"), "p")
+    vim.fn.writefile(vim.fn.readfile(root .. "/" .. relative, "b"), destination, "b")
+  end
+  local instructions = dofile(install .. "/lua/buoy/instructions.lua")
+  local spaced_dir = temp .. "/editor's 日本語 files"
   vim.fn.mkdir(spaced_dir, "p")
   local file = spaced_dir .. "/current.lua"
   vim.fn.writefile({ "local x = 1", "local y = 2", "local z = 3" }, file)
@@ -45,14 +58,8 @@ local ok, err = xpcall(function()
   context.state.filetype = "lua"
   context.state.cursor = { line = 1, col = 1 }
 
-  local cli = root .. "/bridge/buoy.lua"
-
-  --- Runs the CLI exactly as the agent's shell tool would: a headless child
-  --- with the operation at arg[1], while this instance keeps serving RPC
-  --- (vim.wait pumps the main loop).
-  local function run_cli(cli_args, env)
-    local argv = { vim.v.progpath, "--headless", "-u", "NONE", "-i", "NONE", "-l", cli }
-    vim.list_extend(argv, cli_args)
+  --- Run Buoy's generated command while this instance serves live RPC.
+  local function run_argv(argv, env)
     local stdout, exit_code = {}, nil
     local job = vim.fn.jobstart(argv, {
       env = env or { NVIM_CONTEXT_SOCKET = addr },
@@ -75,6 +82,12 @@ local ok, err = xpcall(function()
     return stdout, exit_code
   end
 
+  local function run_cli(cli_args, env)
+    local argv = instructions.bridge_argv()
+    vim.list_extend(argv, cli_args)
+    return run_argv(argv, env)
+  end
+
   --- Asserts stdout is exactly one JSON object plus a trailing newline.
   local function decode_single(stdout)
     eq(2, #stdout, "stdout is a single newline-terminated line")
@@ -91,8 +104,28 @@ local ok, err = xpcall(function()
 
   stdout, code =
     run_cli({ "get_buffer_range", "--start-line", "3", "--end-line", "3", "--file", file })
-  eq(0, code, "explicit --file with a space in the path works")
+  eq(0, code, "direct argv preserves spaces, apostrophes and Unicode in paths")
   eq({ "local z = 3" }, decode_single(stdout).lines, "explicit file reads target the right buffer")
+
+  -- The shell command is Buoy's actual generated prefix. Pass the file through
+  -- a quoted environment expansion so fixture escaping cannot mask a defect
+  -- in Buoy's installation-path quoting.
+  stdout, code = run_argv({
+    "sh",
+    "-c",
+    instructions.cli_prefix()
+      .. ' get_buffer_range --start-line 1 --end-line 1 --file "$BUOY_TEST_FILE"',
+  }, { NVIM_CONTEXT_SOCKET = addr, BUOY_TEST_FILE = file })
+  eq(0, code, "shell prefix launches the bridge from the relocated installation")
+  eq(
+    { "local x = 'unsaved'" },
+    decode_single(stdout).lines,
+    "shell launch preserves the file argument and returns unsaved contents"
+  )
+
+  stdout, code = run_argv({ "sh", "-c", instructions.hook_command() })
+  eq(0, code, "generated context hook launches from the relocated installation")
+  eq(file, vim.json.decode(stdout[2]).current.file, "context hook preserves the editor file path")
 
   local namespace = vim.api.nvim_create_namespace("BuoyBridgeCliSpec")
   vim.diagnostic.set(namespace, 0, {
@@ -192,6 +225,19 @@ local ok, err = xpcall(function()
     "NVIM_UNAVAILABLE",
     decode_single(stdout).code,
     "missing socket variables report NVIM_UNAVAILABLE"
+  )
+
+  -- Exit 0 alone cannot prove a fail-open hook ran; require a buffer refresh.
+  local source_buf = vim.fn.bufnr(file)
+  vim.bo[source_buf].modified = false
+  vim.fn.writefile({ "changed through the shared hook" }, file)
+  stdout, code = run_argv({ "sh", "-c", instructions.post_tool_hook_command() })
+  eq(0, code, "generated refresh hook launches from the relocated installation")
+  eq({ "" }, stdout, "generated refresh hook stays output-free")
+  eq(
+    { "changed through the shared hook" },
+    vim.api.nvim_buf_get_lines(source_buf, 0, -1, false),
+    "generated refresh hook reloads the buffer at the unusual file path"
   )
 end, debug.traceback)
 

@@ -341,22 +341,10 @@ open_window = function()
   ensure_last_window_guard()
 end
 
-local function start_term(argv)
+local function start_term(argv, launch_env)
   local plugin = require("buoy")
-  local env
-  if vim.fn.has("win32") == 0 then
-    local instructions = require("buoy.instructions")
-    env = {
-      NVIM_CONTEXT_SOCKET = plugin.socket,
-    }
-    if plugin.config.agent == "pi" then
-      env.BUOY_PI_INSTRUCTIONS = instructions.neovim_instructions(plugin.config.context)
-      if plugin.config.context.expose_editor_context then
-        env.BUOY_CONTEXT_HOOK_COMMAND = instructions.hook_command()
-        env.BUOY_POST_TOOL_HOOK_COMMAND = instructions.post_tool_hook_command()
-      end
-    end
-  end
+  local env = vim.fn.has("win32") == 0 and { NVIM_CONTEXT_SOCKET = plugin.socket } or nil
+  env = vim.tbl_extend("force", env or {}, launch_env or {})
   vim.api.nvim_buf_call(state.buf, function()
     -- launcher.resolve may run async; the buffer was locked while we waited so
     -- stray keystrokes could not modify it and break termopen. Unlock now.
@@ -388,8 +376,13 @@ local function start_job()
     plugin.config.agent,
     plugin.config.cmd,
     vim.fn.getcwd(),
-    -- Defer every agent so callers can restore focus before start_term considers insert mode.
-    vim.schedule_wrap(start_term)
+    -- Defer every agent so callers can restore focus before start_term considers
+    -- insert mode, preserving Copilot's launch environment alongside its argv.
+    function(argv, env)
+      vim.schedule(function()
+        start_term(argv, env)
+      end)
+    end
   )
 end
 
@@ -403,7 +396,7 @@ function M.open()
       vim.notify(
         (
           "buoy: no compatible agent is installed ('%s' not found on $PATH). "
-          .. "Install Claude Code, Codex, or Pi, or point `cmd` in setup() at your agent CLI."
+          .. "Install Claude Code, Codex, Pi, or GitHub Copilot, or set `cmd` to your agent CLI."
         ):format(cmd),
         vim.log.levels.ERROR
       )

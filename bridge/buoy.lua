@@ -4,8 +4,7 @@
 --- On-demand operation modes return exactly one JSON object and a meaningful
 --- exit status. Internal hook modes deliberately use different contracts:
 --- hook-context prints fresh editor context when available, while
---- hook-checktime is output-free; both suppress failures and always exit 0.
---- None of the modes read stdin.
+--- hook-checktime is output-free; internal hooks suppress failures and always exit 0.
 
 local script_dir = arg[0]:match("^(.*)[/\\]") or "."
 local rpc_ok, rpc = pcall(dofile, script_dir .. "/nvim_rpc.lua")
@@ -36,30 +35,53 @@ local function close(chan)
   end
 end
 
+local function hook_rpc(code)
+  if not rpc_ok then
+    return
+  end
+  local chan = rpc.connect()
+  if not chan then
+    return
+  end
+  local ok, result = pcall(rpc.exec, chan, code, {})
+  close(chan)
+  if ok then
+    return result
+  end
+end
+
+local function context_text()
+  local context = hook_rpc([[
+    if require('buoy').config.context.expose_editor_context then
+      return require('buoy.tools').editor_context()
+    end
+  ]])
+  if type(context) ~= "table" then
+    return
+  end
+  return "Current Neovim editor context (auto-refreshed for every prompt):\n"
+    .. vim.json.encode(context)
+end
+
 local function run_context_hook()
   pcall(function()
-    if not rpc_ok then
-      return
+    local content = context_text()
+    if content then
+      io.write(content .. "\n")
+      io.flush()
     end
-    local chan = rpc.connect()
-    if not chan then
-      return
-    end
+  end)
+  os.exit(0)
+end
 
-    local ok, context = pcall(rpc.exec, chan, "return require('buoy.tools').editor_context()", {})
-    close(chan)
-    if not ok or type(context) ~= "table" then
+local function run_custom_hook(filename, ...)
+  local args = { ... }
+  pcall(function()
+    if type(filename) ~= "string" or not filename:match("^[%w_-]+%.lua$") then
       return
     end
-
-    local encode_ok, encoded = pcall(vim.json.encode, context)
-    if not encode_ok then
-      return
-    end
-
-    io.write("Current Neovim editor context (auto-refreshed for every prompt):\n")
-    io.write(encoded .. "\n")
-    io.flush()
+    local handler = dofile(script_dir .. "/../lua/buoy/custom/" .. filename)
+    handler.run(unpack(args))
   end)
   os.exit(0)
 end
@@ -94,6 +116,8 @@ if mode == "hook-context" then
   run_context_hook()
 elseif mode == "hook-checktime" then
   run_checktime_hook()
+elseif mode == "hook-custom" then
+  run_custom_hook(arg[2], context_text)
 end
 
 local function emit(encoded, status)
